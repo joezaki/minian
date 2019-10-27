@@ -2,14 +2,27 @@ import glob
 import os
 import re
 import gc
+import time
 import matplotlib
 import pickle as pkl
-import skvideo.io as sio
+import skvideo.io as skv
+import skimage.io as ski
 import xarray as xr
 import numpy as np
 import functools as fct
 import holoviews as hv
 import dask as da
+import dask.array.image as daim
+import dask.array as darr
+import pandas as pd
+import subprocess
+import warnings
+import cv2
+import papermill as pm
+import ast
+import psutil
+from pathlib import Path
+from dask.diagnostics import ProgressBar
 from copy import deepcopy
 from scipy import ndimage as ndi
 from scipy.io import loadmat
@@ -17,18 +30,55 @@ from natsort import natsorted
 from matplotlib import pyplot as plt
 from matplotlib import animation as anim
 from collections import Iterable
-from tifffile import imsave, imread
+from tifffile import imsave, imread, TiffFile
 from pandas import Timestamp
 from IPython.core.debugger import set_trace
+from os.path import isdir, abspath
+from os import listdir
+from os.path import join as pjoin
+from itertools import compress
 
-# import caiman as cm
-# from caiman import motion_correction
-# from caiman.components_evaluation import estimate_components_quality
-# from caiman.miniscope.plot import plot_components
-# from caiman.source_extraction import cnmf
+try:
+    import pycuda.autoinit
+    import pycuda.gpuarray as gpuarray
+    import skcuda.linalg as culin
+
+except:
+    print("cannot use cuda accelerate")
 
 
-def load_videos(vpath, pattern='msCam[0-9]+\.avi$'):
+# def load_params(param):
+#     try:
+#         param = ast.literal_eval(param)
+#     except (ValueError, SyntaxError):
+#         pass
+#     try:
+#         if re.search(r'^slice\([0-9]+, *[0-9]+ *,*[0-9]*\)$', param):
+#             param = eval(param)
+#     except TypeError:
+#         pass
+#     if type(param) is dict:
+#         param = {k: load_params(v) for k, v in param.items()}
+#     return param
+
+
+def load_params(param):
+    try:
+        param = eval(param)
+    except:
+        pass
+    if type(param) is dict:
+        param = {k: load_params(v) for k, v in param.items()}
+    return param
+
+
+def load_videos(vpath,
+                pattern='msCam[0-9]+\.avi$',
+                dtype=np.float64,
+                in_memory=False,
+                downsample=None,
+                downsample_strategy='subset',
+                post_process=None):
     """Load videos from a folder.
 
     Load videos from the folder specified in `vpath` and according to the regex
@@ -55,26 +105,156 @@ def load_videos(vpath, pattern='msCam[0-9]+\.avi$'):
 
     """
     vpath = os.path.normpath(vpath)
+    ssname = os.path.basename(vpath)
     vlist = natsorted([
         vpath + os.sep + v for v in os.listdir(vpath) if re.search(pattern, v)
     ])
     if not vlist:
-        print("No data with pattern {} found in the specified folder {}".
-              format(pattern, vpath))
-        return
+        raise FileNotFoundError(
+            "No data with pattern {}"
+            " found in the specified folder {}".format(pattern, vpath))
+    print("loading {} videos in folder {}".format(len(vlist), vpath))
+
+    file_extension = os.path.splitext(vlist[0])[1]
+    if file_extension == '.avi':
+        movie_load_func = load_avi_lazy
+    elif file_extension == '.tif':
+        movie_load_func = load_tif_lazy
     else:
-        print("loading {} videos in folder {}".format(len(vlist), vpath))
-        varray = [sio.vread(v, as_grey=True) for v in vlist]
-        varray = np.squeeze(np.concatenate(varray))
-        return xr.DataArray(
-            varray,
-            dims=['frame', 'height', 'width'],
-            coords={
-                'frame': range(varray.shape[0]),
-                'height': range(varray.shape[1]),
-                'width': range(varray.shape[2])
-            },
-            name=os.path.basename(vpath))
+        raise ValueError('Extension not supported.')
+
+    varr_list = [movie_load_func(v) for v in vlist]
+    varr = darr.concatenate(varr_list, axis=0)
+    varr = xr.DataArray(
+        varr, dims=['frame', 'height', 'width'],
+        coords=dict(
+            frame=np.arange(varr.shape[0]),
+            height=np.arange(varr.shape[1]),
+            width=np.arange(varr.shape[2])))
+    if dtype:
+        varr = varr.astype(dtype)
+    if downsample:
+        bin_eg = {d: np.arange(0, varr.sizes[d], w)
+                  for d, w in downsample.items()}
+        if downsample_strategy == 'mean':
+            varr = (varr.coarsen(**downsample, boundary='trim')
+                    .mean().assign_coords(**bin_eg))
+        elif downsample_strategy == 'subset':
+            varr = varr.sel(**bin_eg)
+        else:
+            warnings.warn(
+                "unrecognized downsampling strategy", RuntimeWarning)
+    varr = varr.rename('fluorescence')
+    if post_process:
+        varr = post_process(varr, vpath, ssname, vlist, varr_list)
+    return varr
+
+def load_tif_lazy(fname):
+    with TiffFile(fname) as tif:
+        data = tif.asarray()
+
+    f = int(data.shape[0])
+    fmread = da.delayed(load_tif_perframe)
+    flist = [fmread(fname, i) for i in range(f)]
+    sample = flist[0].compute()
+    arr = [da.array.from_delayed(
+        fm, dtype=sample.dtype, shape=sample.shape) for fm in flist]
+    return da.array.stack(arr, axis=0)
+
+def load_tif_perframe(fname, fid):
+    return imread(fname, key=fid)
+
+
+def load_avi_lazy(fname):
+    cap = cv2.VideoCapture(fname)
+    f = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fmread = da.delayed(load_avi_perframe)
+    flist = [fmread(fname, i) for i in range(f)]
+    sample = flist[0].compute()
+    arr = [da.array.from_delayed(
+        fm, dtype=sample.dtype, shape=sample.shape) for fm in flist]
+    return da.array.stack(arr, axis=0)
+
+
+def load_avi_perframe(fname, fid):
+    cap = cv2.VideoCapture(fname)
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    cap.set(cv2.CAP_PROP_POS_FRAMES, fid)
+    ret, fm = cap.read()
+    if ret:
+        return np.flip(
+            cv2.cvtColor(fm, cv2.COLOR_RGB2GRAY), axis=0)
+    else:
+        print("frame read failed for frame {}".format(fid))
+        return np.zeros((h, w))
+
+
+def load_avi_lazy_pims(fname):
+    vid = pims.open(fname)
+    f = len(vid)
+    def _read_fm(i):
+        fm = vid[i]
+        r, g, b = fm[:, :, 0], fm[:, :, 1], fm[:, :, 2]
+        return np.asarray(0.2125 * r + 0.7154 * g + 0.0721 * b)
+    _read_fm_dl = da.delayed(_read_fm)
+    flist = [_read_fm_dl(i) for i in range(f)]
+    sample = flist[0].compute()
+    arr = [da.array.from_delayed(
+        fm, dtype=sample.dtype, shape=sample.shape) for fm in flist]
+    return da.array.stack(arr, axis=0)
+
+
+    
+def handle_crash(varr, vpath, ssname, vlist, varr_list, frame_dict):
+    seg1_list = list(filter(lambda v: re.search('seg1', v), vlist))
+    seg2_list = list(filter(lambda v: re.search('seg2', v), vlist))
+    if seg1_list and seg2_list:
+        tframe = frame_dict[ssname]
+        varr1 = darr.concatenate(
+            list(compress(varr_list, seg1_list)),
+            axis=0)
+        varr2 = darr.concatenate(
+            list(compress(varr_list, seg2_list)),
+            axis=0)
+        fm1, fm2 = varr1.shape[0], varr2.shape[0]
+        fm_crds = varr.coords['frame']
+        fm_crds1 = fm_crds.sel(frame=slice(None, fm1 - 1)).values
+        fm_crds2 = fm_crds.sel(frame=slice(fm1, None)).values
+        fm_crds2 = fm_crds2 + (tframe - fm_crds2.max())
+        fm_crds_new = np.concatenate([fm_crds1, fm_crds2], axis=0)
+        return varr.assign_coords(frame=fm_crds_new)
+    else:
+        return varr
+
+
+def video_to_tiffs(ipath, opath, iptn='msCam[0-9]+\.avi$', optn='msCam-%05d.tiff'):
+    flist = natsorted([os.path.join(ipath, v) for v in os.listdir(ipath) if re.search(iptn, v)])
+    istr = "|".join(flist)
+    ostr = os.path.join(opath, optn)
+    cmd = 'ffmpeg -i "concat:{}" -pix_fmt rgba -compression_algo raw {}'.format(istr, ostr)
+    try:
+        os.makedirs(opath)
+    except OSError:
+        if not os.path.isdir(path):
+            raise
+    print("output directory: {}".format(opath))
+    subprocess.check_call(cmd, shell=True)
+
+
+def load_images(path, dtype=np.float64):
+    # imread = fct.partial(ski.imread, as_gray=True)
+    imread = fct.partial(imread_cv, dtype=dtype)
+    varr = daim.imread(path, imread)
+    varr = xr.DataArray(varr, dims=['frame', 'height', 'width'])
+    for dim, length in varr.sizes.items():
+        varr = varr.assign_coords(**{dim: np.arange(length)})
+    return varr
+
+
+def imread_cv(im, dtype=np.float64):
+    return (cv2.imread(im, flags=cv2.IMREAD_GRAYSCALE)
+            .astype(dtype))
 
 
 def create_fig(varlist, nrows, ncols, **kwargs):
@@ -190,7 +370,7 @@ def save_video(movpath, fname_mov_orig, fname_mov_rig, fname_AC, fname_ACbf,
     mov_rig = np.load(fname_mov_rig, mmap_mode='r')
     mov_ac = np.load(fname_AC, mmap_mode='r')
     mov_acbf = np.load(fname_ACbf, mmap_mode='r')
-    vw = sio.FFmpegWriter(
+    vw = skv.FFmpegWriter(
         movpath, inputdict={'-framerate': '30'}, outputdict={'-r': '30'})
     for fidx in range(0, mov_orig.shape[0], dsratio):
         print("writing frame: " + str(fidx))
@@ -226,8 +406,10 @@ def save_mp4(filename, dat):
     vw = sio.FFmpegWriter(
         filename,
         inputdict={'-framerate': '30'},
-        outputdict={'-r': '30',
-                    '-vcodec': 'rawvideo'})
+        outputdict={
+            '-r': '30',
+            '-vcodec': 'rawvideo'
+        })
     for fid, f in enumerate(dat):
         print("writing frame: {}".format(fid), end='\r')
         vw.writeFrame(f)
@@ -288,20 +470,43 @@ def varr_to_float32(varr):
     return varr_norm
 
 
-def scale_varr(varr, scale=(0, 1), inplace=True):
-    copy = not inplace
-    if np.issubdtype(varr.dtype, np.floating):
-        dtype = varr.dtype
+def scale_varr(varr, scale=(0, 1), inplace=False, pre_compute=False):
+    varr_max = varr.max()
+    varr_min = varr.min()
+    if pre_compute:
+        print("pre-computing min and max")
+        with ProgressBar():
+            varr_max = varr_max.compute()
+            varr_min = varr_min.compute()
+    if inplace:
+        varr_norm = varr
+        varr_norm -= varr_min
+        varr_norm *= 1 / (varr_max - varr_min)
+        varr_norm *= (scale[1] - scale[0])
+        varr_norm += scale[0]
     else:
-        dtype = np.float32
-    varr_norm = varr.astype(dtype, copy=copy)
-    varr_max = varr_norm.max()
-    varr_min = varr_norm.min()
-    varr_norm -= varr_min
-    varr_norm *= 1 / (varr_max - varr_min)
-    varr_norm *= (scale[1] - scale[0])
-    varr_norm += scale[0]
-    return varr_norm.astype(varr.dtype, copy=False)
+        varr_norm = ((varr - varr_min) * (scale[1] - scale[0])
+                     / (varr_max - varr_min)) + scale[0]
+    return varr_norm
+
+
+def scale_varr_da(varr, scale=(0, 1)):
+    return ((varr - darr.nanmin(varr)) * (scale[1] - scale[0])
+           / (darr.nanmax(varr) - darr.nanmin(varr))) + scale[0]
+
+
+def normalize(a, scale=(0, 1), copy=False):
+    if copy:
+        a_norm = a.copy()
+    else:
+        a_norm = a
+    a_max = np.nanmax(a_norm)
+    a_min = np.nanmin(a_norm)
+    a_norm -= a_min
+    a_norm *= 1 / (a_max - a_min)
+    a_norm *= (scale[1] - scale[0])
+    a_norm += scale[0]
+    return a_norm
 
 
 def varray_to_tif(filename, varr):
@@ -365,27 +570,35 @@ def save_cnmf(cnmf,
     dims = cnmf.dims
     A = xr.DataArray(
         cnmf.A.toarray().reshape(dims + (-1, ), order=order),
-        coords={'height': h,
-                'width': w,
-                'unit_id': range(cnmf.A.shape[-1])},
+        coords={
+            'height': h,
+            'width': w,
+            'unit_id': range(cnmf.A.shape[-1])
+        },
         dims=['height', 'width', 'unit_id'],
         name='A')
     C = xr.DataArray(
         cnmf.C,
-        coords={'unit_id': range(cnmf.C.shape[0]),
-                'frame': f},
+        coords={
+            'unit_id': range(cnmf.C.shape[0]),
+            'frame': f
+        },
         dims=['unit_id', 'frame'],
         name='C')
     S = xr.DataArray(
         cnmf.S,
-        coords={'unit_id': range(cnmf.S.shape[0]),
-                'frame': f},
+        coords={
+            'unit_id': range(cnmf.S.shape[0]),
+            'frame': f
+        },
         dims=['unit_id', 'frame'],
         name='S')
     YrA = xr.DataArray(
         cnmf.YrA,
-        coords={'unit_id': range(cnmf.S.shape[0]),
-                'frame': f},
+        coords={
+            'unit_id': range(cnmf.S.shape[0]),
+            'frame': f
+        },
         dims=['unit_id', 'frame'],
         name='YrA')
     b = xr.DataArray(
@@ -399,8 +612,10 @@ def save_cnmf(cnmf,
         name='b')
     f = xr.DataArray(
         cnmf.f,
-        coords={'background_id': range(cnmf.f.shape[0]),
-                'frame': f},
+        coords={
+            'background_id': range(cnmf.f.shape[0]),
+            'frame': f
+        },
         dims=['background_id', 'frame'],
         name='f')
     ds = xr.merge([A, C, S, YrA, b, f])
@@ -411,9 +626,9 @@ def save_cnmf(cnmf,
             unit_mask = np.arange(ds.sizes['unit_id'])
         if meta_dict is not None:
             pathlist = os.path.normpath(dpath).split(os.sep)
-            ds = ds.assign_coords(
-                **dict([(cdname, pathlist[cdval])
-                        for cdname, cdval in meta_dict.items()]))
+            ds = ds.assign_coords(**dict([(
+                cdname,
+                pathlist[cdval]) for cdname, cdval in meta_dict.items()]))
         ds = ds.assign_attrs({
             'unit_mask': unit_mask,
             'file_path': dpath + os.sep + "cnm.nc"
@@ -448,22 +663,181 @@ def save_variable(var, fpath, fname, meta_dict=None):
     return ds
 
 
-def update_meta(dpath, pattern=r'^varr_mc_int.nc$', meta_dict=None):
+def open_minian(dpath, fname='minian', backend='netcdf', chunks=None, post_process=None):
+    if backend is 'netcdf':
+        fname = fname + '.nc'
+        if chunks is 'auto':
+            chunks = dict([(d, 'auto') for d in ds.dims])
+        mpath = pjoin(dpath, fname)
+        with xr.open_dataset(mpath) as ds:
+            dims = ds.dims
+        chunks = dict([(d, 'auto') for d in dims])
+        ds = xr.open_dataset(os.path.join(dpath, fname), chunks=chunks)
+        if post_process:
+            ds = post_process(ds, mpath)
+        return ds
+    elif backend is 'zarr':
+        mpath = pjoin(dpath, fname)
+        dslist = [xr.open_zarr(pjoin(mpath, d)) for d in listdir(mpath) if isdir(pjoin(mpath, d))]
+        ds = xr.merge(dslist)
+        if chunks is 'auto':
+            chunks = dict([(d, 'auto') for d in ds.dims])
+        if post_process:
+            ds = post_process(ds, mpath)
+        return ds.chunk(chunks)
+    else:
+        raise NotImplementedError("backend {} not supported".format(backend))
+
+
+def open_minian_mf(dpath, index_dims, result_format='xarray', pattern=r'minian\.[0-9]+$', sub_dirs=[], exclude=True, **kwargs):
+    minian_dict = dict()
+    for nextdir, dirlist, filelist in os.walk(dpath, topdown=False):
+        nextdir = os.path.abspath(nextdir)
+        cur_path = Path(nextdir)
+        dir_tag = bool(((any([Path(epath) in cur_path.parents for epath in sub_dirs]))
+                        or nextdir in sub_dirs))
+        if exclude == dir_tag:
+            continue
+        flist = list(filter(lambda f: re.search(pattern, f), filelist + dirlist))
+        if flist:
+            print("opening dataset under {}".format(nextdir))
+            if len(flist) > 1:
+                warnings.warn("multiple dataset found: {}".format(flist))
+            fname = flist[-1]
+            print("opening {}".format(fname))
+            minian = open_minian(nextdir, fname=fname, **kwargs)
+            key = tuple([np.array_str(minian[d].values) for d in index_dims])
+            minian_dict[key] = minian
+            print(["{}: {}".format(d, v) for d, v in zip(index_dims, key)])
+    if result_format is 'xarray':
+        return xrconcat_recursive(minian_dict, index_dims)
+    elif result_format is 'pandas':
+        minian_df = pd.Series(minian_dict).rename('minian')
+        minian_df.index.set_names(index_dims, inplace=True)
+        return minian_df.to_frame()
+    else:
+        raise NotImplementedError(
+            "format {} not understood".format(result_format))
+
+
+def save_minian(var, dpath, fname='minian', backend='netcdf', meta_dict=None, overwrite=False):
+    dpath = os.path.normpath(dpath)
+    ds = var.to_dataset()
+    if meta_dict is not None:
+        pathlist = os.path.abspath(dpath).split(os.sep)
+        ds = ds.assign_coords(
+            **dict([(dn, pathlist[di]) for dn, di in meta_dict.items()]))
+    if backend is 'netcdf':
+        try:
+            md = {True: 'w', False: 'a'}[overwrite]
+            ds.to_netcdf(os.path.join(dpath, fname + '.nc'), mode=md)
+        except FileNotFoundError:
+            ds.to_netcdf(os.path.join(dpath, fname + '.nc'), mode=md)
+        return ds
+    elif backend is 'zarr':
+        md = {True: 'w', False: 'w-'}[overwrite]
+        ds.to_zarr(os.path.join(dpath, fname, var.name + '.zarr'), mode=md)
+        return ds
+    else:
+        raise NotImplementedError("backend {} not supported".format(backend))
+
+def delete_variable(fpath, varlist, del_org=False):
+    fpath_bak = fpath + ".{}.backup".format(int(time.time()))
+    os.rename(fpath, fpath_bak)
+    with xr.open_dataset(fpath_bak) as ds:
+        new_ds = ds.drop(varlist)
+        new_ds.to_netcdf(fpath)
+    if del_org:
+        os.remove(fpath_bak)
+    return "deleted {} in file {}".format(str(varlist), fpath)
+
+
+def xrconcat_recursive(var, dims):
+    if len(dims) > 1:
+        if type(var) is dict:
+            var_dict = var
+        elif type(var) is list:
+            var_dict = {tuple([np.asscalar(v[d]) for d in dims]): v for v in var}
+        else:
+            raise NotImplementedError("type {} not supported".format(type(var)))
+        try:
+            var_dict = {k: v.to_dataset() for k, v in var_dict.items()}
+        except AttributeError:
+            pass
+        var_ps = pd.Series(var_dict)
+        var_ps.index.set_names(dims, inplace=True)
+        xr_ls = []
+        for idx, v in var_ps.groupby(level=dims[0]):
+            v.index = v.index.droplevel(dims[0])
+            xarr = xrconcat_recursive(v.to_dict(), dims[1:])
+            xr_ls.append(xarr)
+        return xr.concat(xr_ls, dim=dims[0])
+    else:
+        if type(var) is dict:
+            var = var.values()
+        return xr.concat(var, dim=dims[0])
+
+
+def update_meta(dpath, pattern=r'^minian\.nc$', meta_dict=None, backend='netcdf'):
     for dirpath, dirnames, fnames in os.walk(dpath):
-        fnames = filter(lambda fn: re.search(pattern, fn), fnames)
+        if backend == 'netcdf':
+            fnames = filter(lambda fn: re.search(pattern, fn), fnames)
+        elif backend == 'zarr':
+            fnames = filter(lambda fn: re.search(pattern, fn), dirnames)
+        else:
+            raise NotImplementedError("backend {} not supported".format(backend))
         for fname in fnames:
             f_path = os.path.join(dirpath, fname)
             pathlist = os.path.normpath(dirpath).split(os.sep)
             new_ds = xr.Dataset()
-            with xr.open_dataset(f_path) as old_ds:
-                new_ds.attrs = deepcopy(old_ds.attrs)
-            new_ds = new_ds.assign_coords(
-                **dict([(cdname, pathlist[cdval])
-                        for cdname, cdval in meta_dict.items()]))
-            new_ds = new_ds.assign_attrs(dict(file_path=f_path))
-            new_ds.to_netcdf(f_path, mode='a')
+            old_ds = open_minian(f_path, f_path, backend)
+            new_ds.attrs = deepcopy(old_ds.attrs)
+            old_ds.close()
+            new_ds = new_ds.assign_coords(**dict([(
+                cdname,
+                pathlist[cdval]) for cdname, cdval in meta_dict.items()]))
+            if backend == 'netcdf':
+                new_ds.to_netcdf(f_path, mode='a')
+            elif backend == 'zarr':
+                new_ds.to_zarr(f_path, mode='w')
             print("updated: {}".format(f_path))
 
+
+def get_chk(arr):
+    return {d: c for d, c in zip(arr.dims, arr.chunks)}
+
+
+def rechunk_like(x, y):
+    try:
+        dst_chk = get_chk(y)
+        comm_dim = set(x.dims).intersection(set(dst_chk.keys()))
+        dst_chk = {d: max(dst_chk[d]) for d in comm_dim}
+        return x.chunk(dst_chk)
+    except TypeError:
+        return x.compute()
+
+
+def get_optimal_chk(arr, dim_grp=None, ncores='auto', mem_limit='auto'):
+    if ncores=='auto':
+        ncores = psutil.cpu_count()
+    if mem_limit=='auto':
+        mem_limit = (psutil.virtual_memory().available / 1024 ** 2)
+    csize = min(int(np.floor(mem_limit/ncores/3)), 1024)
+    dims = arr.dims
+    if not dim_grp:
+        dim_grp = [(d,) for d in dims]
+    opt_chk = dict()
+    for dg in dim_grp:
+        d_rest = set(dims) - set(dg)
+        dg_dict = {d: 'auto' for d in dg}
+        dr_dict = {d: -1 for d in d_rest}
+        dg_dict.update(dr_dict)
+        with da.config.set({'array.chunk-size': '{}MiB'.format(csize)}):
+            arr_chk = arr.chunk(dg_dict)
+        re_dict = {d: c for d, c in zip(dims, arr_chk.chunks)}
+        re_dict = {d: max(re_dict[d]) for d in dg}
+        opt_chk.update(re_dict)
+    return opt_chk
 
 # def resave_varr_again(dpath, pattern=r'^varr_mc_int.nc$'):
 #     for dirpath, dirnames, fnames in os.walk(dpath):
@@ -478,7 +852,6 @@ def update_meta(dpath, pattern=r'^varr_mc_int.nc$', meta_dict=None):
 #                 ds = old_ds.load().copy()
 #                 ds = ds.rename({vname: 'varr_mc_int'})
 #             ds.to_netcdf(f_path, mode='w')
-
 
 # def resave_cnmf(dpath, pattern=r'^cnm.nc$'):
 #     for dirpath, fdpath, fpath in os.walk(dpath):
@@ -599,14 +972,18 @@ def save_cnmf_from_mat(matpath,
         name='A')
     C = xr.DataArray(
         cnmf.C,
-        coords={'unit_id': range(cnmf.C.shape[0]),
-                'frame': T_coord},
+        coords={
+            'unit_id': range(cnmf.C.shape[0]),
+            'frame': T_coord
+        },
         dims=['unit_id', 'frame'],
         name='C')
     S = xr.DataArray(
         cnmf.S,
-        coords={'unit_id': range(cnmf.S.shape[0]),
-                'frame': T_coord},
+        coords={
+            'unit_id': range(cnmf.S.shape[0]),
+            'frame': T_coord
+        },
         dims=['unit_id', 'frame'],
         name='S')
     if cnmf.b.any():
@@ -629,8 +1006,10 @@ def save_cnmf_from_mat(matpath,
     if cnmf.f.any():
         f = xr.DataArray(
             cnmf.f,
-            coords={'background_id': range(cnmf.f.shape[0]),
-                    'frame': T_coord},
+            coords={
+                'background_id': range(cnmf.f.shape[0]),
+                'frame': T_coord
+            },
             dims=['background_id', 'frame'],
             name='f')
     else:
@@ -653,205 +1032,3 @@ def save_cnmf_from_mat(matpath,
     })
     ds.to_netcdf(dpath + os.sep + "cnm_from_mat.nc")
     return ds
-
-
-# def process_data(dpath, movpath, pltpath, roi):
-#     params_movie = {
-#         'niter_rig': 1,
-#         'max_shifts': (20, 20),
-#         'splits_rig': 28,
-#         'num_splits_to_process_rig': None,
-#         'strides': (48, 48),
-#         'overlaps': (24, 24),
-#         'splits_els': 28,
-#         'num_splits_to_process_els': [14, None],
-#         'upsample_factor_grid': 4,
-#         'max_deviation_rigid': 3,
-#         'p': 1,
-#         'merge_thresh': 0.9,
-#         'rf': 40,
-#         'stride_cnmf': 20,
-#         'K': 4,
-#         'is_dendrites': False,
-#         'init_method': 'greedy_roi',
-#         'gSig': [10, 10],
-#         'alpha_snmf': None,
-#         'final_frate': 30
-#     }
-#     if not dpath.endswith(os.sep):
-#         dpath = dpath + os.sep
-#     if not os.path.isfile(dpath + 'mc.npz'):
-#         # start parallel
-#         c, dview, n_processes = cm.cluster.setup_cluster(
-#             backend='local', n_processes=None, single_thread=False)
-#         dpattern = 'msCam*.avi'
-#         dlist = sorted(glob.glob(dpath + dpattern),
-#                        key=lambda var: [int(x) if x.isdigit() else x for x in re.findall(r'[^0-9]|[0-9]+', var)])
-#         if not dlist:
-#             print("No data found in the specified folder: " + dpath)
-#             return
-#         else:
-#             vdlist = list()
-#             for vname in dlist:
-#                 vdlist.append(sio.vread(vname, as_grey=True))
-#             mov_orig = cm.movie(
-#                 np.squeeze(np.concatenate(vdlist, axis=0))).astype(np.float32)
-#             # column correction
-#             meanrow = np.mean(np.mean(mov_orig, 0), 0)
-#             addframe = np.tile(meanrow, (mov_orig.shape[1], 1))
-#             mov_cc = mov_orig - np.tile(addframe, (mov_orig.shape[0], 1, 1))
-#             mov_cc = mov_cc - np.min(mov_cc)
-#             # filter
-#             mov_ft = mov_cc.copy()
-#             for fid, fm in enumerate(mov_cc):
-#                 mov_ft[fid] = ndi.uniform_filter(fm, 2) - ndi.uniform_filter(
-#                     fm, 40)
-#             mov_orig = (mov_orig - np.min(mov_orig)) / (
-#                 np.max(mov_orig) - np.min(mov_orig))
-#             mov_ft = (mov_ft - np.min(mov_ft)) / (
-#                 np.max(mov_ft) - np.min(mov_ft))
-#             np.save(dpath + 'mov_orig', mov_orig)
-#             np.save(dpath + 'mov_ft', mov_ft)
-#             del mov_orig, dlist, vdlist, mov_ft
-#             mc_data = motion_correction.MotionCorrect(
-#                 dpath + 'mov_ft.npy',
-#                 0,
-#                 dview=dview,
-#                 max_shifts=params_movie['max_shifts'],
-#                 niter_rig=params_movie['niter_rig'],
-#                 splits_rig=params_movie['splits_rig'],
-#                 num_splits_to_process_rig=params_movie[
-#                     'num_splits_to_process_rig'],
-#                 strides=params_movie['strides'],
-#                 overlaps=params_movie['overlaps'],
-#                 splits_els=params_movie['splits_els'],
-#                 num_splits_to_process_els=params_movie[
-#                     'num_splits_to_process_els'],
-#                 upsample_factor_grid=params_movie['upsample_factor_grid'],
-#                 max_deviation_rigid=params_movie['max_deviation_rigid'],
-#                 shifts_opencv=True,
-#                 nonneg_movie=False,
-#                 roi=roi)
-#             mc_data.motion_correct_rigid(save_movie=True)
-#             mov_rig = cm.load(mc_data.fname_tot_rig)
-#             np.save(dpath + 'mov_rig', mov_rig)
-#             np.savez(
-#                 dpath + 'mc',
-#                 fname_tot_rig=mc_data.fname_tot_rig,
-#                 templates_rig=mc_data.templates_rig,
-#                 shifts_rig=mc_data.shifts_rig,
-#                 total_templates_rig=mc_data.total_template_rig,
-#                 max_shifts=mc_data.max_shifts,
-#                 roi=mc_data.roi)
-#             del mov_rig
-#     else:
-#         print("motion correction data already exist. proceed")
-#     if not os.path.isfile(dpath + "cnm.npz"):
-#         # start parallel
-#         c, dview, n_processes = cm.cluster.setup_cluster(
-#             backend='local', n_processes=None, single_thread=False)
-#         fname_tot_rig = np.array_str(
-#             np.load(dpath + 'mc.npz')['fname_tot_rig'])
-#         mov, dims, T = cm.load_memmap(fname_tot_rig)
-#         mov = np.reshape(mov.T, [T] + list(dims), order='F')
-#         cnm = cnmf.CNMF(
-#             n_processes,
-#             k=params_movie['K'],
-#             gSig=params_movie['gSig'],
-#             merge_thresh=params_movie['merge_thresh'],
-#             p=params_movie['p'],
-#             dview=dview,
-#             Ain=None,
-#             rf=params_movie['rf'],
-#             stride=params_movie['stride_cnmf'],
-#             memory_fact=1,
-#             method_init=params_movie['init_method'],
-#             alpha_snmf=params_movie['alpha_snmf'],
-#             only_init_patch=True,
-#             gnb=1,
-#             method_deconvolution='oasis')
-#         cnm = cnm.fit(mov)
-#         idx_comp, idx_comp_bad = estimate_components_quality(
-#             cnm.C + cnm.YrA,
-#             np.reshape(mov, dims + (T, ), order='F'),
-#             cnm.A,
-#             cnm.C,
-#             cnm.b,
-#             cnm.f,
-#             params_movie['final_frate'],
-#             Npeaks=10,
-#             r_values_min=.7,
-#             fitness_min=-40,
-#             fitness_delta_min=-40)
-#         A2 = cnm.A.tocsc()[:, idx_comp]
-#         C2 = cnm.C[idx_comp]
-#         cnm = cnmf.CNMF(
-#             n_processes,
-#             k=A2.shape,
-#             gSig=params_movie['gSig'],
-#             merge_thresh=params_movie['merge_thresh'],
-#             p=params_movie['p'],
-#             dview=dview,
-#             Ain=A2,
-#             Cin=C2,
-#             f_in=cnm.f,
-#             rf=None,
-#             stride=None,
-#             method_deconvolution='oasis')
-#         cnm = cnm.fit(mov)
-#         idx_comp, idx_comp_bad = estimate_components_quality(
-#             cnm.C + cnm.YrA,
-#             np.reshape(mov, dims + (T, ), order='F'),
-#             cnm.A,
-#             cnm.C,
-#             cnm.b,
-#             cnm.f,
-#             params_movie['final_frate'],
-#             Npeaks=10,
-#             r_values_min=.75,
-#             fitness_min=-50,
-#             fitness_delta_min=-50)
-#         cnm.A = cnm.A.tocsc()[:, idx_comp]
-#         cnm.C = cnm.C[idx_comp]
-#         cm.cluster.stop_server()
-#         cnm.A = (cnm.A - np.min(cnm.A)) / (np.max(cnm.A) - np.min(cnm.A))
-#         cnm.C = (cnm.C - np.min(cnm.C)) / (np.max(cnm.C) - np.min(cnm.C))
-#         cnm.b = (cnm.b - np.min(cnm.b)) / (np.max(cnm.b) - np.min(cnm.b))
-#         cnm.f = (cnm.f - np.min(cnm.f)) / (np.max(cnm.f) - np.min(cnm.f))
-#         np.savez(
-#             dpath + 'cnm',
-#             A=cnm.A.todense(),
-#             C=cnm.C,
-#             b=cnm.b,
-#             f=cnm.f,
-#             YrA=cnm.YrA,
-#             sn=cnm.sn,
-#             dims=dims)
-#     else:
-#         print("cnm data already exist. proceed")
-#     try:
-#         A = cnm.A
-#         C = cnm.C
-#         dims = dims
-#     except NameError:
-#         A = np.load(dpath + 'cnm.npz')['A']
-#         C = np.load(dpath + 'cnm.npz')['C']
-#         dims = np.load(dpath + 'cnm.npz')['dims']
-#     plot_components(A, C, dims, pltpath)
-
-# def batch_process_data(animal_path, movroot, pltroot, roi):
-#     for dirname, subdirs, files in os.walk(animal_path):
-#         if files:
-#             dirnamelist = dirname.split(os.sep)
-#             dname = dirnamelist[-3] + '_' + dirnamelist[-2]
-#             movpath = movroot + os.sep + dname
-#             pltpath = pltroot + os.sep + dname
-#             if not os.path.exists(movpath):
-#                 os.mkdir(movpath)
-#             if not os.path.exists(pltpath):
-#                 os.mkdir(pltpath)
-#             movpath = movpath + os.sep
-#             pltpath = pltpath + os.sep
-#             process_data(dirname, movpath, pltpath, roi)
-#         else:
-#             print("empty folder: " + dirname + " proceed")
