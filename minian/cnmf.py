@@ -84,7 +84,7 @@ def get_noise_fft(
         kwargs=dict(
             noise_range=noise_range, noise_method=noise_method, threads=threads
         ),
-        output_dtypes=[np.float],
+        output_dtypes=[float],
     )
     return sn
 
@@ -386,6 +386,7 @@ def update_spatial(
                     C_store=C_store,
                     f=f_in,
                 )
+                cur_blk = cur_blk.map_blocks(sparse.COO)
             else:
                 cur_blk = darr.array(sparse.zeros((cur_sub.shape)))
             A_new[hblk, wblk, 0] = cur_blk
@@ -861,7 +862,7 @@ def update_temporal(
     A_inter = sparse.tensordot(A_sps, A_sps, axes=[(1, 2), (1, 2)])
     A_usum = np.tile(A_sps.sum(axis=(1, 2)).todense(), (A_sps.shape[0], 1))
     A_usum = A_usum + A_usum.T
-    jac = scipy.sparse.csc_matrix(A_inter / (A_usum - A_inter) > jac_thres)
+    jac = (A_inter / (A_usum - A_inter) > jac_thres).tocsc()
     unit_labels = label_connected(jac)
     YrA = YrA.assign_coords(unit_labels=("unit_id", unit_labels))
     print("updating temporal components")
@@ -1510,12 +1511,12 @@ def label_connected(adj: np.ndarray, only_connected=False) -> np.ndarray:
         The labels for each components. Should have length `adj.shape[0]`.
     """
     try:
-        np.fill_diagonal(adj, 0)
-        adj = np.triu(adj)
-        g = nx.convert_matrix.from_numpy_matrix(adj)
+        adj.setdiag(0)
+        adj = scipy.sparse.triu(adj)
+        g = nx.convert_matrix.from_numpy_array(adj)
     except:
-        g = nx.convert_matrix.from_scipy_sparse_matrix(adj)
-    labels = np.zeros(adj.shape[0], dtype=np.int)
+        g = nx.convert_matrix.from_scipy_sparse_array(adj)
+    labels = np.zeros(adj.shape[0], dtype=int)
     for icomp, comp in enumerate(nx.connected_components(g)):
         comp = list(comp)
         if only_connected and len(comp) == 1:
