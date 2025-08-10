@@ -142,7 +142,7 @@ def estimate_motion(
                         dim: va.coords[dim].values,
                         "shift_dim": ["height", "width"],
                     },
-                )
+                ).chunk({dim: chunk_nfm})
             else:
                 sh = xr.DataArray(
                     sh,
@@ -151,7 +151,7 @@ def estimate_motion(
                         dim: va.coords[dim].values,
                         "shift_dim": ["height", "width"],
                     },
-                )
+                ).chunk({dim: chunk_nfm})
             res_dict[lab] = sh.assign_coords(**{k: v for k, v in zip(loop_dims, lab)})
         sh = xrconcat_recursive(res_dict, loop_dims)
     else:
@@ -164,7 +164,7 @@ def estimate_motion(
                     dim: varr.coords[dim].values,
                     "shift_dim": ["height", "width"],
                 },
-            )
+            ).chunk({dim: chunk_nfm})
         else:
             sh = xr.DataArray(
                 sh,
@@ -173,7 +173,7 @@ def estimate_motion(
                     dim: varr.coords[dim].values,
                     "shift_dim": ["height", "width"],
                 },
-            )
+            ).chunk({dim: chunk_nfm})
     return sh
 
 
@@ -515,11 +515,11 @@ def est_motion_perframe(
     --------
     estimate_motion : for detailed explanation of parameters
     """
-    sh = phase_cross_correlation(
+    sh, sh_error, diff_phase = phase_cross_correlation(
         src,
         dst,
         upsample_factor=upsample,
-        return_error=False,
+        normalization=None
     )
     if mesh_size is None:
         return -sh
