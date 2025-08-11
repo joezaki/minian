@@ -85,12 +85,7 @@ def visualize_raw_video(
     # Update line on slider change
     def update_plot(index):
         cur_frame = varr.sel(frame=index)
-
         frame_im.set_data(cur_frame)
-        # histogram.set_data(cur_frame.stack(stacked_dims=['height','width']))
-
-        # histogram._data = cur_frame.stack(stacked_dims=['height','width'])
-        # histogram.update()
 
         nonlocal histogram
         histogram.parent = None
@@ -228,22 +223,22 @@ def visualize_preprocess(
         interpolation='cubic',
         parent=view2.scene
         )
-    iso = IsolineFilter(level=5, width=3, color='white')
+    iso = IsolineFilter(level=5, width=2, color='white')
     orig_contour.attach(iso)
 
-    # add image (subplot 3)
+    # add processed image (subplot 3)
     processed_image = scene.Image(
         image_ls[0],
         parent=view3.scene
         )
     
-    # add image contour (subplot 4)
+    # add processed image contour (subplot 4)
     processed_contour = scene.Image(
         image_ls[0],
         interpolation='cubic',
         parent=view4.scene
         )
-    iso = IsolineFilter(level=3, width=1, color='white')
+    iso = IsolineFilter(level=5, width=2, color='white')
     processed_contour.attach(iso)
     
     # share axes
