@@ -14,6 +14,7 @@ from vispy import scene, use
 from vispy.scene import visuals
 from vispy.visuals.filters import IsolineFilter
 from vispy.scene.cameras import Magnify1DCamera
+from vispy.color import colormap
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QSlider
 from PyQt5.QtCore import Qt
 use('pyqt5')
@@ -951,6 +952,69 @@ def visualize_temporal_params(
         param_slider_ls[i].valueChanged.connect(update_funcs[i])
 
     win.setLayout(layout)
+    win.show()
+    qt_app.exec_()
+
+def jackson_pollock_plot(
+        A_array,
+        max_proj,
+        title,
+        method='maxidx',
+        threshold=0,
+        cm=colormap.get_colormap('Spectral_r'),
+        alpha=0.7
+):
+    rand_color = np.random.choice(np.arange(1,A_array.shape[0]+1), A_array.shape[0], replace=False)
+
+    if method == 'forloop':
+        maxA = A_array.max('unit_id').values
+        for i in range(A_array.shape[0]):
+            maxA[(A_array[i,:,:]>threshold)] = rand_color[i]
+
+    elif method == 'matmul':
+        A_array = (A_array.values > threshold)
+        maxA = (A_array.T * rand_color).T.max(axis=0).astype(np.float32)
+
+    elif method == 'maxidx':
+        rand_color -= 1
+        A_array = A_array.values[rand_color,:,:]
+        maxA = np.argmax(A_array, axis=0).astype(np.float32)
+    else:
+        raise Exception('Invalid method chosen.')
+
+    # convert maxA colors to remove space where there are no cells
+    maxA[maxA <= threshold] = np.nan
+    maxA = normalize(maxA)
+    maxA = np.array([cm[maxA[i,:]] for i in np.arange(maxA.shape[0])])
+    maxA[:,:,-1] = alpha
+
+    # begin plotting
+    qt_app = QApplication.instance()
+    win = QWidget()
+    win.setWindowTitle(title)
+    layout = QVBoxLayout()
+    win.setLayout(layout)
+
+    canvas = scene.SceneCanvas(keys='interactive')
+    layout.addWidget(canvas.native)
+    grid = canvas.central_widget.add_grid(spacing=1)
+
+    max_proj_view = scene.ViewBox(pos=(0,0), border_color='white', parent=canvas.scene)
+    a_view        = scene.ViewBox(pos=(0,1), border_color='white', parent=canvas.scene)
+    grid.add_widget(max_proj_view, 0, 0)
+    grid.add_widget(a_view, 0, 1)
+
+    max_proj_im = scene.Image(max_proj.astype(np.float32), cmap='gray', parent=max_proj_view.scene)
+    a_im        = scene.Image(maxA.astype(np.float32), cmap='Spectral_r', parent=a_view.scene)
+
+    max_proj_view.camera = 'panzoom'
+    a_view.camera        = 'panzoom'
+    max_proj_view.camera.aspect = 1
+    a_view.camera.aspect = 1
+    max_proj_view.camera.link(a_view.camera)
+    max_proj_view.camera.set_range()
+    a_view.camera.set_range()
+
     win.show()
     qt_app.exec_()
 
