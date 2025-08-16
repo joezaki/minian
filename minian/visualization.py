@@ -133,7 +133,7 @@ def visualize_before_after(
     height *= im_scaling
     
     # VisPy canvas and view
-    canvas = scene.SceneCanvas(keys='interactive', size=(width*2,height), bgcolor='white')
+    canvas = scene.SceneCanvas(keys='interactive', size=(width*2,height))
     layout.addWidget(canvas.native)
     grid = canvas.central_widget.add_grid(spacing=1)
     
