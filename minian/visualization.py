@@ -800,7 +800,7 @@ def visualize_temporal_params(
         'YA' : YA_dict,
         'C'  : C_dict,
         'S'  : S_dict,
-        'sig': sig_dict
+        # 'sig': sig_dict
     }
 
     if norm:
@@ -808,7 +808,7 @@ def visualize_temporal_params(
             for param in activities_dict[var]:
                 activities_dict[var][param] = xr.apply_ufunc(
                     normalize,
-                    activities_dict[var][param].chunk(dict(frame=-1)),
+                    activities_dict[var][param].chunk(dict(frame=-1)).compute(),
                     input_core_dims=[["frame"]],
                     output_core_dims=[["frame"]],
                     vectorize=True,
@@ -825,7 +825,7 @@ def visualize_temporal_params(
 
         s_pul, c_pul = xr.apply_ufunc(
             construct_pulse_response,
-            g_dict[param_ls],
+            g_dict[param_ls].compute(),
             input_core_dims=[["lag"]],
             output_core_dims=[["t"], ["t"]],
             vectorize=True,
@@ -932,19 +932,19 @@ def visualize_temporal_params(
         win.setWindowTitle(f'{cur_params};  cell: {cur_cell}')
 
     def update_p(index):
-        cur_params['p_ls'] = params['p_ls'][index]
+        cur_params['p'] = params['p'][index]
         update_subplots()
 
     def update_sprs(index):
-        cur_params['sprs_ls'] = params['sprs_ls'][index]
+        cur_params['sparse_penal'] = params['sparse_penal'][index]
         update_subplots()
 
     def update_add(index):
-        cur_params['add_ls'] = params['add_ls'][index]
+        cur_params['add_lag'] = params['add_lag'][index]
         update_subplots()
     
     def update_noise(index):
-        cur_params['noise_ls'] = params['noise_ls'][index]
+        cur_params['noise_freq'] = params['noise_freq'][index]
         update_subplots()
 
     update_funcs = [update_p, update_sprs, update_add, update_noise]
