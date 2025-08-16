@@ -681,6 +681,10 @@ def visualize_spatial_bg(
             width, height = data.sizes['width'], data.sizes['height']
             view_ls[i].camera = scene.PanZoomCamera(rect=((0, 0), (width, height)))
             plot = scene.Image(data, parent=view_ls[i].scene)
+    
+    # temporarily link spatial and temporal plots by index
+    view_ls[0].camera.link(view_ls[2].camera)
+    view_ls[1].camera.link(view_ls[3].camera)
 
     win.show()
     qt_app.exec_()
