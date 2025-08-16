@@ -955,6 +955,52 @@ def visualize_temporal_params(
     win.show()
     qt_app.exec_()
 
+
+def visualize_temporal_components(
+        C=None,
+        S=None,
+        C_new=None,
+        S_new=None,
+        title='Temporal Update'
+):
+    
+    qt_app = QApplication.instance()
+    win = QWidget()
+    win.setWindowTitle(title)
+    layout = QVBoxLayout()
+    win.setLayout(layout)
+    
+    # VisPy canvas and view
+    canvas = scene.SceneCanvas(keys='interactive', bgcolor='white')
+    layout.addWidget(canvas.native)
+    grid = canvas.central_widget.add_grid()
+
+    plot_coords = list(itt.product(range(2),range(2)))
+    data_to_plot = {
+        'C'     : C,
+        'S'     : S,
+        'C_new' : C_new,
+        'S_new' : S_new,
+    }
+    view_ls = []
+    for i, (var, data) in enumerate(data_to_plot.items()):
+        view = scene.ViewBox(pos=(plot_coords[i]), parent=canvas.scene, border_color='black')
+        view_ls.append(view)
+        grid.add_widget(view_ls[i], plot_coords[i][0], plot_coords[i][1])
+        if data is None:
+            view_ls[i].camera = 'panzoom'
+        else:
+            width, height = data.sizes['frame'], data.sizes['unit_id']
+            view_ls[i].camera = scene.PanZoomCamera(rect=((0, 0), (width, height)))
+            plot = scene.Image(data, parent=view_ls[i].scene)
+
+    for i in np.arange(1,4):
+        view_ls[0].camera.link(view_ls[i].camera)
+    
+    win.show()
+    qt_app.exec_()
+
+
 def jackson_pollock_plot(
         A_array,
         max_proj,
