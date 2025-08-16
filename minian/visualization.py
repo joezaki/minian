@@ -343,10 +343,11 @@ def visualize_seeds(
     view.camera = 'panzoom'
 
     # add seeds
-    good_seeds_scatter = visuals.Markers()
-    good_seeds_scatter.set_data(pos=good_seeds[['width','height']].values,
-                                edge_width=0, face_color=('white'), size=3, symbol='o')
-    view.add(good_seeds_scatter)
+    if good_seeds.shape[0] > 0:
+        good_seeds_scatter = visuals.Markers()
+        good_seeds_scatter.set_data(pos=good_seeds[['width','height']].values,
+                                    edge_width=0, face_color=('white'), size=3, symbol='o')
+        view.add(good_seeds_scatter)
     if bad_seeds.shape[0] > 0:
         bad_seeds_scatter = visuals.Markers()
         bad_seeds_scatter.set_data(pos=bad_seeds[['width','height']].values,
