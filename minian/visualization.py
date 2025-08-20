@@ -148,12 +148,12 @@ class Vis:
         self.axis_labels = {'image':{'x':'width', 'y':'height'},
                             'hist': {'x':'frequency', 'y':'fluorescence'},
                             'line': {'x':'frame', 'y':'fluorescence'}}
-        self.col_spans = {'image':2, 'hist':1, 'line':2}
+        col_spans = {'image':2, 'hist':1, 'line':2}
         self.view_dict = {name:self.add_axes_view(
             name=name,
             x_label=self.axis_labels[name]['x'],
             y_label=self.axis_labels[name]['y'],
-            col_span=self.col_spans[name]) for name in self.view_coords.keys()}
+            col_span=col_spans[name]) for name in self.view_coords.keys()}
         
         frame_im = scene.Image(cur_frame, parent=self.view_dict['image'].scene)
         histogram = visuals.Histogram(
@@ -292,10 +292,10 @@ class Vis:
             'processed'        : (1,0),
             'processed_contour': (1,1)
         }
-        orig_view      = self.add_axes_view('orig')
-        orig_cont_view = self.add_axes_view('orig_contour')
-        proc_view      = self.add_axes_view('processed')
-        proc_cont_view = self.add_axes_view('processed_contour')
+        orig_view      = self.add_axes_view('orig', x_label='width', y_label='height')
+        orig_cont_view = self.add_axes_view('orig_contour', x_label='width', y_label='height')
+        proc_view      = self.add_axes_view('processed', x_label='width', y_label='height')
+        proc_cont_view = self.add_axes_view('processed_contour', x_label='width', y_label='height')
 
         # add original image (subplot 1)
         orig_image = scene.Image(
@@ -338,6 +338,10 @@ class Vis:
             orig_cont_view.camera.aspect = 1
             proc_view.camera.aspect = 1
             proc_cont_view.camera.aspect = 1
+        orig_view.camera.rect      = (0, 0, frame.sizes['width'], frame.sizes['height'])
+        orig_cont_view.camera.rect = (0, 0, frame.sizes['width'], frame.sizes['height'])
+        proc_view.camera.rect      = (0, 0, frame.sizes['width'], frame.sizes['height'])
+        proc_cont_view.camera.rect = (0, 0, frame.sizes['width'], frame.sizes['height'])
 
         # Slider
         slider = QSlider(Qt.Horizontal)
@@ -366,11 +370,7 @@ class Vis:
 
         # Add a ViewBox with pan/zoom
         self.view_coords = {'motion': (0,0)}
-        view = self.add_axes_view('motion', x_label='frame', y_label='motion')
-        if magnify:
-            view.camera = Magnify1DCamera(mag=1, size_factor=2, radius_ratio=1)
-        else:
-            view.camera = 'panzoom'
+        view = self.add_axes_view('motion', x_label='frame', y_label='motion', magnify=magnify)
 
         frames = motion.frame
         width_line = scene.Line(pos=np.column_stack((frames, motion.sel(shift_dim="width"))),
@@ -418,7 +418,7 @@ class Vis:
         # add max proj
         max_proj_im = scene.Image(max_proj, parent=view.scene)
 
-        view.camera.set_range()
+        view.camera.rect = (0, 0, max_proj.sizes['width'], max_proj.sizes['height'])
         view.camera.aspect = 1
     
 
@@ -456,9 +456,7 @@ class Vis:
         low_lines_dict = {}
         high_lines_dict = {}
         for i, seed in enumerate(seeds):
-            view_dict[seed] = self.add_axes_view(name=seed)
-            if magnify:
-                view_dict[seed].camera = Magnify1DCamera(mag=1, size_factor=2, radius_ratio=1)
+            view_dict[seed] = self.add_axes_view(name=seed, magnify=magnify)
             low_lines_dict[seed] = scene.Line(
                 pos=np.column_stack((frames, arrays_dict[noise_freq_list[0]]['low'][i])),
                 color='#ff7f0e',
@@ -519,8 +517,12 @@ class Vis:
         col_spans = {'A':1, 'C':2, 'b':1, 'f':2}
         plot_coords = list(itt.product(range(2),range(2)))
         self.view_coords = {name:coord for name, coord in zip(data_to_plot.keys(), plot_coords)}
+        x_labels = {'A': 'width', 'C': 'frame', 'b': 'width', 'f': 'frame'}
+        y_labels = {'A': 'height', 'C': 'unit_id', 'b': 'height', 'f': 'f'}
 
-        view_dict = {name:self.add_axes_view(name) for name in data_to_plot.keys()}
+        view_dict = {name:self.add_axes_view(name, col_span=col_spans[name],
+                                             x_label=x_labels[name],
+                                             y_label=y_labels[name]) for name in data_to_plot.keys()}
 
         a_plot = scene.Image(data_to_plot['A'], parent=view_dict['A'].scene)
         b_plot = scene.Image(data_to_plot['b'], parent=view_dict['b'].scene)
@@ -530,10 +532,14 @@ class Vis:
             color="#07117b", width=1, parent=view_dict['f'].scene
         )
 
-        for view in view_dict.values():
-            view.camera.set_range()
+        view_dict['A'].camera.rect = (0, 0, A.sizes['width'], A.sizes['height'])
+        view_dict['b'].camera.rect = (0, 0, b.sizes['width'], b.sizes['height'])
+        view_dict['C'].camera.rect = (0, 0, C.sizes['frame'], C.sizes['unit_id'])
+        view_dict['f'].camera.set_range()
         
         # link the spatial subplots together
+        view_dict['A'].camera.aspect = 1
+        view_dict['b'].camera.aspect = 1
         view_dict['A'].camera.link(view_dict['b'].camera)
     
 
@@ -564,24 +570,20 @@ class Vis:
         self.view_coords = {'a_binary':(0,0),
                             'a_cont'  :(1,0),
                             'temporal':(0,1)}
-        self.row_spans   = {'a_binary':1,
-                            'a_cont'  :1,
-                            'temporal':2}
         a_bin_view = self.add_axes_view(
             name='a_binary',
             x_label='width',
             y_label='height',
-            row_span=self.row_spans['a_binary'])
+            row_span=1)
         a_cont_view = self.add_axes_view(
             name='a_cont',
             x_label='width',
             y_label='height',
-            row_span=self.row_spans['a_cont'])
+            row_span=1)
         temp_view = self.add_axes_view(
             name='temporal',
-            x_label='width',
-            y_label='height',
-            row_span=self.row_spans['temporal'])
+            x_label='frame',
+            row_span=2)
         
         a_bin_view.camera.link(a_cont_view.camera)
         a_bin_view.camera.aspect = 1
@@ -591,8 +593,8 @@ class Vis:
         A_binary = scene.Image((A_dict[sprs_ls[0]] > 0).sum("unit_id").astype(np.float32), parent=a_bin_view.scene)
 
         A_cont = scene.Image(A_dict[sprs_ls[0]].sum("unit_id").astype(np.float32), parent=a_cont_view.scene)
-        a_bin_view.camera.set_range()
-        a_cont_view.camera.set_range()
+        a_bin_view.camera.rect = (0, 0, A_dict[sprs_ls[0]].sizes['width'], A_dict[sprs_ls[0]].sizes['height'])
+        a_cont_view.camera.rect = (0, 0, A_dict[sprs_ls[0]].sizes['width'], A_dict[sprs_ls[0]].sizes['height'])
 
         # plot temporal components
         C_ls = []
@@ -647,7 +649,7 @@ class Vis:
             view_ls.append(view)
 
             plot = scene.Image(data, parent=view_ls[i].scene)
-            view.camera.set_range()
+            view.camera.rect = (0, 0, data.sizes['width'], data.sizes['height'])
             view.camera.aspect = 1
 
         for i in np.arange(1,4):
@@ -672,17 +674,24 @@ class Vis:
         }
         self.view_coords = {name:coord for name, coord in zip(data_to_plot.keys(), plot_coords)}
         view_ls = []
+        col_spans = {'b':1, 'f':2, 'b_new':1, 'f_new':2}
+        x_labels = {'b':'width', 'f':'frame', 'b_new':'width', 'f_new':'frame'}
+        y_labels = {'b':'height','f':'f',     'b_new':'height','f_new':'f'}
         for i, (name, data) in enumerate(data_to_plot.items()):
-            view = self.add_axes_view(name)
+            view = self.add_axes_view(name,
+                                      col_span=col_spans[name],
+                                      x_label=x_labels[name],
+                                      y_label=y_labels[name])
             view_ls.append(view)
 
             if name[0] == 'f':
                 plot = scene.Line(pos=np.column_stack((data.frame, data)),
                                 color='#07117b', width=1, parent=view_ls[i].scene)
+                view_ls[i].camera.set_range()
             else:
                 plot = scene.Image(data, parent=view_ls[i].scene)
                 view_ls[i].camera.aspect = 1
-            view_ls[i].camera.set_range()
+                view_ls[i].camera.rect = (0, 0, data.sizes['width'], data.sizes['height'])
         
         # temporarily link spatial and temporal plots by index
         view_ls[0].camera.link(view_ls[2].camera)
@@ -759,31 +768,28 @@ class Vis:
         self.view_coords = {'temporal' :(0,0),
                             'pulse'    :(1,0),
                             'footprint':(1,1)}
-        self.col_spans = {'temporal'  :2,
+        col_spans = {'temporal'  :2,
                           'pulse'     :1,
                           'footprint' :1}
         temp_view  = self.add_axes_view(
             name='temporal',
             x_label='frame',
             y_label='Intensity (A.U.)',
-            col_span=self.col_spans['temporal']
+            col_span=col_spans['temporal'],
+            magnify=magnify
             )
         pulse_view = self.add_axes_view(
             name='pulse',
             x_label='t',
             y_label='Response (A.U.)',
-            col_span=self.col_spans['pulse']
+            col_span=col_spans['pulse']
             )
         footprint_view = self.add_axes_view(
             name='footprint',
             x_label='width',
             y_label='height',
-            col_span=self.col_spans['footprint']
+            col_span=col_spans['footprint']
             )
-
-        if magnify:
-            temp_view.camera = Magnify1DCamera(mag=1, size_factor=2, radius_ratio=1)
-
 
         # initialize data in all subplots
         s_plot = scene.Line(pos=np.column_stack((frames, S_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
@@ -799,8 +805,9 @@ class Vis:
                                 color='steelblue', width=2, parent=pulse_view.scene)
         pulse_view.camera.set_range()
         
-        a_plot = scene.Image(A_dict[tuple(cur_params.values())][0,:,:], parent=footprint_view.scene)
-        footprint_view.camera.set_range()
+        cur_footprint = A_dict[tuple(cur_params.values())][0,:,:]
+        a_plot = scene.Image(cur_footprint, parent=footprint_view.scene)
+        footprint_view.camera.rect = (0, 0, cur_footprint.sizes['width'], cur_footprint.sizes['height'])
 
 
         # Slider configs
@@ -880,11 +887,11 @@ class Vis:
         self.view_coords = {name:coord for name, coord in zip(components_dict.keys(), plot_coords)}
         view_ls = []
         for i, (name, data) in enumerate(components_dict.items()):
-            view = self.add_axes_view(name, x_label='frame', y_label='unit')
+            view = self.add_axes_view(name, x_label='frame', y_label='unit_id')
             view_ls.append(view)
             plot = scene.Image(data, parent=view_ls[i].scene)
             if data is not None:
-                view.camera.set_range()
+                view.camera.rect = (0, 0, data.sizes['frame'], data.sizes['unit_id'])
 
         for i in np.arange(1,len(components_dict)):
             view_ls[0].camera.link(view_ls[i].camera)
@@ -936,486 +943,9 @@ class Vis:
         max_proj_view.camera.aspect = 1
         a_view.camera.aspect = 1
         max_proj_view.camera.link(a_view.camera)
-        max_proj_view.camera.set_range()
-        a_view.camera.set_range()
-
-
-
-def visualize_raw_video(
-        varr,
-        title
-):
-    cur_frame = varr.sel(frame = 0)
-
-    qt_app = QApplication.instance()
-    win = QWidget()
-    win.setWindowTitle(title)
-    layout = QVBoxLayout()
-    win.setLayout(layout)
-    
-    # VisPy canvas and view
-    canvas = scene.SceneCanvas(keys='interactive', bgcolor='white')
-    layout.addWidget(canvas.native)
-    grid = canvas.central_widget.add_grid(spacing=1)
-    
-    view1 = scene.ViewBox(pos=(0,0), parent=canvas.scene)
-    view2 = scene.ViewBox(pos=(0,1), parent=canvas.scene)
-    view3 = scene.ViewBox(pos=(1,0), parent=canvas.scene)
-
-    grid.add_widget(view1, 0, 0, col_span=2, row_span=2)
-    grid.add_widget(view2, 0, 2, col_span=1, row_span=2)
-    grid.add_widget(view3, 2, 0, col_span=2)
-
-
-    frame_im = scene.Image(cur_frame, parent=view1.scene)
-    histogram = visuals.Histogram(
-        data=cur_frame.stack(stacked_dims=['height','width']),
-        bins=50,
-        orientation='v',
-        color='darkblue',
-        parent=view2.scene)
-    frames = varr.frame
-    min_vals = scene.Line(
-        pos=np.column_stack((frames, varr.min(['height','width']))),
-                            color='#ff7f0e', width=2, parent=view3.scene)
-    max_vals = scene.Line(
-        pos=np.column_stack((frames, varr.max(['height','width']))),
-                            color='#1f77b4', width=2, parent=view3.scene)
-    mean_vals = scene.Line(
-        pos=np.column_stack((frames, varr.mean(['height','width']))),
-                            color='black', width=2, parent=view3.scene)
-    cur_vline = scene.Line(
-        pos=np.column_stack(((0,0),(-10,300))),
-                             color='red', width=2, parent=view3.scene)
-
-    view1.camera = 'panzoom'
-    view2.camera = 'panzoom'
-    view3.camera = 'panzoom'
-    view1.camera.set_range()
-    view2.camera.set_range(y=(0,255))
-    view3.camera.set_range(x=(frames[0],frames[-1]))
-
-    # Slider
-    slider = QSlider(Qt.Horizontal)
-    slider.setRange(0, varr.sizes['frame'] - 1)
-    slider.setValue(0)
-    layout.addWidget(slider)
-    
-    # Update line on slider change
-    def update_plot(index):
-        cur_frame = varr.sel(frame=index)
-        frame_im.set_data(cur_frame)
-
-        nonlocal histogram
-        histogram.parent = None
-        histogram = visuals.Histogram(
-            data=cur_frame.stack(stacked_dims=['height','width']),
-            bins=50,
-            orientation='v',
-            color='darkblue',
-            parent=view2.scene)
-
-        cur_vline.set_data(np.column_stack(((index,index),(-10,300))))
-
-        win.setWindowTitle(f'frame = {index}')
-        canvas.update()
-
-    slider.valueChanged.connect(update_plot)
-
-    win.show()
-    qt_app.exec_()
-
-
-def visualize_before_after(
-        before,
-        after,
-        title,
-        im_scaling=1
-):
-
-    # if objects are just images, add a frame dim
-    if 'frame' not in before.dims:
-        before = before.expand_dims({'frame': 1})
-    if 'frame' not in after.dims:
-        after = after.expand_dims({'frame': 1})
-
-    qt_app = QApplication.instance()
-    win = QWidget()
-    win.setWindowTitle(title)
-    layout = QVBoxLayout()
-    win.setLayout(layout)
-    
-    width  = before.sizes['width']
-    height = before.sizes['height']
-    width  *= im_scaling
-    height *= im_scaling
-    
-    # VisPy canvas and view
-    canvas = scene.SceneCanvas(keys='interactive', size=(width*2,height))
-    layout.addWidget(canvas.native)
-    grid = canvas.central_widget.add_grid(spacing=1)
-    
-    view1 = scene.ViewBox(pos=(0,0), size=(width,height), parent=canvas.scene)
-    view2 = scene.ViewBox(pos=(0,1), size=(width,height), parent=canvas.scene)
-
-    grid.add_widget(view1, 0, 0)
-    grid.add_widget(view2, 0, 1)
-
-    # add before and after images
-    before_im = scene.Image(before.isel(frame=0), parent=view1.scene)
-    after_im = scene.Image(after.isel(frame=0), parent=view1.scene)
-    view2.add(after_im)
-
-    view1.camera = scene.PanZoomCamera(rect=((0, 0), (width, height)))
-    view2.camera = scene.PanZoomCamera(rect=((0, 0), (width, height)))
-    view1.camera.aspect = 1
-    view2.camera.aspect = 1
-    view1.camera.link(view2.camera)
-
-    # Slider
-    slider = QSlider(Qt.Horizontal)
-    slider.setRange(0, before.sizes['frame'] - 1)
-    slider.setValue(0)
-    layout.addWidget(slider)
-    
-    # Update line on slider change
-    def update_plot(index):
-        before_im.set_data(before.isel(frame=index))
-        after_im.set_data(after.isel(frame=index))
-        win.setWindowTitle(f'{title}: frame = {index}')
-        canvas.update()
-
-    slider.valueChanged.connect(update_plot)
-
-    win.show()
-    qt_app.exec_()
-
-
-def visualize_preprocess(
-        frame,
-        func,
-        title,
-        im_scaling=1,
-        **kwargs
-):
-    # create list of processed images and subtitles
-    pkey = kwargs.keys()
-    pval = kwargs.values()
-    image_ls = [func(frame, **dict(zip(pkey, params))) for params in itt.product(*pval)]
-    title_ls = [str(dict(zip(pkey, params))) for params in itt.product(*pval)]
-
-    qt_app = QApplication.instance()
-    win = QWidget()
-    win.setWindowTitle(title)
-    layout = QVBoxLayout()
-    win.setLayout(layout)
-    
-    width  = frame.sizes['width']
-    height = frame.sizes['height']
-    width  *= im_scaling
-    height *= im_scaling
-    
-    # VisPy canvas and view
-    canvas = scene.SceneCanvas(keys='interactive', size=(width*2,height*2), bgcolor='white')
-    layout.addWidget(canvas.native)
-    grid = canvas.central_widget.add_grid(spacing=1)
-    
-    view1 = scene.ViewBox(pos=(0,0), size=(width,height), parent=canvas.scene)
-    view2 = scene.ViewBox(pos=(0,1), size=(width,height), parent=canvas.scene)
-    view3 = scene.ViewBox(pos=(1,0), size=(width,height), parent=canvas.scene)
-    view4 = scene.ViewBox(pos=(1,1), size=(width,height), parent=canvas.scene)
-    
-    grid.add_widget(view1, 0, 0)
-    grid.add_widget(view2, 0, 1)
-    grid.add_widget(view3, 1, 0)
-    grid.add_widget(view4, 1, 1)
-
-    # add original image (subplot 1)
-    orig_image = scene.Image(
-        image_ls[0],
-        parent=view1.scene
-        )
-
-    # add original contour (subplot 2)
-    orig_contour = scene.Image(
-        image_ls[0],
-        interpolation='cubic',
-        parent=view2.scene
-        )
-    iso = IsolineFilter(level=5, width=2, color='white')
-    orig_contour.attach(iso)
-
-    # add processed image (subplot 3)
-    processed_image = scene.Image(
-        image_ls[0],
-        parent=view3.scene
-        )
-    
-    # add processed image contour (subplot 4)
-    processed_contour = scene.Image(
-        image_ls[0],
-        interpolation='cubic',
-        parent=view4.scene
-        )
-    iso = IsolineFilter(level=5, width=2, color='white')
-    processed_contour.attach(iso)
-    
-    # share axes
-    view1.camera = scene.PanZoomCamera(rect=((0, 0), (width, height)))
-    view2.camera = scene.PanZoomCamera(rect=((0, 0), (width, height)))
-    view3.camera = scene.PanZoomCamera(rect=((0, 0), (width, height)))
-    view4.camera = scene.PanZoomCamera(rect=((0, 0), (width, height)))
-    view1.camera.link(view2.camera)
-    view1.camera.link(view3.camera)
-    view1.camera.link(view4.camera)
-    
-    # Slider
-    slider = QSlider(Qt.Horizontal)
-    slider.setRange(0, len(image_ls) - 1)
-    slider.setValue(0)
-    layout.addWidget(slider)
-    
-    # Update line on slider change
-    def update_plot(index):
-        processed_image.set_data(image_ls[index])
-        processed_contour.set_data(image_ls[index])
-        win.setWindowTitle(f'{title}: {title_ls[index]}')
-        canvas.update()
-
-    slider.valueChanged.connect(update_plot)
-    
-    win.show()
-    qt_app.exec_()
-
-
-def visualize_motion(
-        motion,
-        magnify=False
-):
-    
-    qt_app = QApplication.instance()
-    win = QWidget()
-    layout = QVBoxLayout(win)
-
-    canvas = scene.SceneCanvas(keys='interactive', size=(1000, 400), show=True, bgcolor='white')
-    canvas._send_hover_events = True
-    layout.addWidget(canvas.native)
-
-    # Add a ViewBox with pan/zoom
-    view = canvas.central_widget.add_view()
-    if magnify:
-        view.camera = Magnify1DCamera(mag=4, size_factor=0.6, radius_ratio=0.6)
-    else:
-        view.camera = 'panzoom'
-
-    # Add X and Y axes
-    x_axis = scene.AxisWidget(orientation='bottom', axis_label='frame',
-                            axis_color='black', text_color='black', tick_color='black')
-    y_axis = scene.AxisWidget(orientation='left', axis_label='motion',
-                            axis_color='black', text_color='black', tick_color='black')
-    x_axis.stretch = (1, 0.1)
-    y_axis.stretch = (0.1, 1)
-    # Link axes to the view
-    grid = canvas.central_widget.add_grid()
-    grid.add_widget(y_axis, row=0, col=0)
-    grid.add_widget(x_axis, row=1, col=1)
-    grid.add_widget(view,   row=0, col=1)
-    x_axis.link_view(view)
-    y_axis.link_view(view)
-
-    frames = motion.frame
-    width_line = scene.Line(pos=np.column_stack((frames, motion.sel(shift_dim="width"))),
-                            color='#ff7f0e', width=1, parent=view.scene)
-    height_line = scene.Line(pos=np.column_stack((frames, motion.sel(shift_dim="height"))),
-                             color='#1f77b4', width=1, parent=view.scene)
-    view.camera.set_range()
-    
-    win.setLayout(layout)
-    win.show()
-    qt_app.exec_()
-
-
-def visualize_seeds(
-        max_proj,
-        seeds,
-        mask=None
-):
-    
-    if mask is None:
-        mask = np.repeat(True, seeds.shape[0])
-    else:
-        mask = seeds[mask]
-    good_seeds = seeds[mask].copy()
-    bad_seeds  = seeds[np.invert(mask)].copy()
-
-    qt_app = QApplication.instance()
-    win = QWidget()
-    layout = QVBoxLayout(win)
-
-    canvas = scene.SceneCanvas(keys='interactive', show=True)
-    canvas._send_hover_events = True
-    layout.addWidget(canvas.native)
-
-    # Add a ViewBox with pan/zoom
-    view = canvas.central_widget.add_view()
-    view.camera = 'panzoom'
-
-    # add seeds
-    if good_seeds.shape[0] > 0:
-        good_seeds_scatter = visuals.Markers()
-        good_seeds_scatter.set_data(pos=good_seeds[['width','height']].values,
-                                    edge_width=0, face_color=('white'), size=3, symbol='o')
-        view.add(good_seeds_scatter)
-    if bad_seeds.shape[0] > 0:
-        bad_seeds_scatter = visuals.Markers()
-        bad_seeds_scatter.set_data(pos=bad_seeds[['width','height']].values,
-                                edge_width=0, face_color=('red'), size=3, symbol='o')
-        view.add(bad_seeds_scatter)
-
-    # add max proj
-    max_proj_im = scene.Image(max_proj, parent=view.scene)
-
-    view.camera.set_range()
-    view.camera.aspect = 1
-    
-    win.setLayout(layout)
-    win.show()
-    qt_app.exec_()
-
-
-def visualize_pnr_refine(
-        Y_hw_chk,
-        example_seeds,
-        noise_freq_list,
-        cols=3,
-        magnify=False,
-        link_views=False
-):
-    # compute signals for all pnr levels
-    example_trace = Y_hw_chk.sel(
-        height=example_seeds["height"].to_xarray(),
-        width=example_seeds["width"].to_xarray(),
-    ).rename(**{"index": "seed"})
-    arrays_dict = {}
-    for freq in noise_freq_list:
-        trace_smth_low = smooth_sig(example_trace, freq).compute()
-        trace_smth_high = smooth_sig(example_trace, freq, btype="high").compute()
-        arrays_dict[freq] = {'low':trace_smth_low,
-                             'high':trace_smth_high}
-
-    # begin plotting
-    qt_app = QApplication.instance()
-    win = QWidget()
-    layout = QVBoxLayout(win)
-
-    canvas = scene.SceneCanvas(keys='interactive', size=(1000, 400), show=True, bgcolor='white')
-    canvas._send_hover_events = True
-    layout.addWidget(canvas.native)
-
-    grid = canvas.central_widget.add_grid()
-    plot_coords = list(itt.product(range(int(np.ceil(len(example_seeds)/cols))),range(cols)))
-    view_ls = []
-    frames = Y_hw_chk.frame
-    low_lines_ls = []
-    high_lines_ls = []
-    for i in np.arange(len(example_seeds)):
-        view_ls.append(scene.ViewBox(pos=plot_coords[i], border_color='black'))
-        if magnify:
-            view_ls[i].camera = Magnify1DCamera(mag=4, size_factor=0.6, radius_ratio=0.6)
-        else:
-            view_ls[i].camera = 'panzoom'
-        grid.add_widget(view_ls[i], plot_coords[i][0], plot_coords[i][1])
-        low_line = scene.Line(
-            pos=np.column_stack((frames, arrays_dict[noise_freq_list[0]]['low'][i])),
-            color='#ff7f0e',
-            width=1,
-            parent=view_ls[i].scene
-            )
-        low_lines_ls.append(low_line)
-        high_line = scene.Line(
-            pos=np.column_stack((frames, arrays_dict[noise_freq_list[0]]['high'][i])),
-            color='#1f77b4',
-            width=1,
-            parent=view_ls[i].scene
-            )
-        high_lines_ls.append(high_line)
-
-    # link views
-    if link_views:
-        for i in np.arange(1,len(view_ls)):
-            view_ls[0].camera.link(view_ls[i].camera)
-    
-    # Slider
-    slider = QSlider(Qt.Horizontal)
-    slider.setRange(0, len(noise_freq_list) - 1)
-    slider.setValue(0)
-    layout.addWidget(slider)
-    
-    # Update line on slider change
-    def update_plot(index):
-        for i in np.arange(len(example_seeds)):
-            low_data = arrays_dict[noise_freq_list[index]]['low'][i]
-            high_data = arrays_dict[noise_freq_list[index]]['high'][i]
-            low_lines_ls[i].set_data(pos=np.column_stack((frames, low_data)))
-            high_lines_ls[i].set_data(pos=np.column_stack((frames, high_data)))
-            view_ls[i].camera.set_range(y=(min(low_data.min(),high_data.min()),
-                                           max(low_data.max(),high_data.max())))
-        win.setWindowTitle(f'noise frequency: {noise_freq_list[index]}')
-        canvas.update()
-
-    update_plot(0)
-    slider.valueChanged.connect(update_plot)
-    
-    win.show()
-    qt_app.exec_()
-
-
-def visualize_initialization(
-        A,
-        C,
-        b,
-        f
-):
-    qt_app = QApplication.instance()
-    win = QWidget()
-    win.setWindowTitle('Initialization Visualization')
-    layout = QVBoxLayout()
-    win.setLayout(layout)
-    
-    # VisPy canvas and view
-    canvas = scene.SceneCanvas(keys='interactive', bgcolor='white')
-    layout.addWidget(canvas.native)
-    grid = canvas.central_widget.add_grid(spacing=1)
-
-    # add data to subplots
-    view_ls = []
-    col_spans = [1, 2, 1, 2]
-    plot_coords = list(itt.product(range(2),range(2)))
-    data_to_plot = {
-        'A': A.max("unit_id").compute().astype(np.float32),
-        'C': C.compute().astype(np.float32),
-        'b': b.compute().astype(np.float32),
-        'f': f.compute().astype(np.float32)
-    }
-    for i, (var, data) in enumerate(data_to_plot.items()):
-        view = scene.ViewBox(pos=plot_coords[i], parent=canvas.scene)
-        view_ls.append(view)
-        view_ls[i].camera = 'panzoom'
-        grid.add_widget(view_ls[i], plot_coords[i][0], plot_coords[i][1], col_span=col_spans[i])
-        if var == 'f':
-            plot = scene.Line(pos=np.column_stack((f.frame, f)),
-                            color="#07117b", width=1, parent=view.scene)
-        else:
-            plot = scene.Image(data, parent=view_ls[i])
-        view_ls[i].add(plot)
-        view_ls[i].camera.set_range()
-    
-    # link the spatial subplots together
-    view_ls[0].camera.link(view_ls[2].camera)
-    
-    win.setLayout(layout)
-    win.show()
-    qt_app.exec_()
+        width, height = (max_proj.sizes['width'], max_proj.sizes['height'])
+        max_proj_view.camera.rect = (0, 0, width, height)
+        a_view.camera.rect = (0, 0, width, height)
 
 
 def normalize(a: np.ndarray) -> np.ndarray:
