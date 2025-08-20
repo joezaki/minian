@@ -82,7 +82,10 @@ class Vis:
             x_label=None,
             y_label=None,
             col_span=1,
-            row_span=1
+            row_span=1,
+            magnify=False,
+            add_xaxis=True,
+            add_yaxis=True
             ):
         '''
         Add x- and y-axes to a given subplot, given the view
@@ -102,21 +105,30 @@ class Vis:
             major_tick_length=5,
             minor_tick_length=3
         )
-        xaxis = scene.AxisWidget(orientation='bottom', axis_label=x_label, **axis_kwargs)
-        yaxis = scene.AxisWidget(orientation='left', axis_label=y_label, **axis_kwargs)
-        xaxis.height_max = 40
-        yaxis.width_max = 40
 
-        nested_grid.add_widget(xaxis, row=1, col=1)
-        nested_grid.add_widget(yaxis, row=0, col=0)
+        if add_xaxis:
+            xaxis = scene.AxisWidget(orientation='bottom', axis_label=x_label, **axis_kwargs)
+            xaxis.height_max = 40
+            nested_grid.add_widget(xaxis, row=1, col=1)
+        
+
+        if add_yaxis:
+            yaxis = scene.AxisWidget(orientation='left', axis_label=y_label, **axis_kwargs)
+            yaxis.width_max = 40
+            nested_grid.add_widget(yaxis, row=0, col=0)
 
         # Link axes to the view
         view = nested_grid.add_view(row=0, col=1)
         view.border_color = 'black'
-        view.camera = scene.cameras.PanZoomCamera()
+        if magnify:
+            view.camera = Magnify1DCamera(mag=1, size_factor=2*col_span, radius_ratio=1)
+        else:
+            view.camera = scene.cameras.PanZoomCamera()
 
-        xaxis.link_view(view)
-        yaxis.link_view(view)
+        if add_xaxis:
+            xaxis.link_view(view)
+        if add_yaxis:
+            yaxis.link_view(view)
 
         return view
     
