@@ -598,10 +598,13 @@ class Vis:
 
         # plot temporal components
         C_ls = []
-        for i, _ in enumerate(units):
+        for i, unit in enumerate(units):
             line = scene.Line(pos=np.column_stack((C_dict[sprs_ls[0]].frame,
                                                 C_dict[sprs_ls[0]][i,:]+i)),
                                                 color='#07117b', width=1, parent=temp_view.scene)
+            text = scene.visuals.Text(str(unit), color='black', parent=temp_view.scene)
+            text.font_size= 10
+            text.pos = -10, i+0.5
             C_ls.append(line)
         temp_view.camera.set_range()
 
