@@ -90,7 +90,7 @@ class Vis:
         '''
 
         row, col = self.view_coords[name]
-        nested_grid = self.grid.add_grid(row, col)
+        nested_grid = self.grid.add_grid(row, col, row_span=row_span, col_span=col_span)
         nested_grid.spacing = 0
 
         # Add X and Y axes
@@ -107,13 +107,13 @@ class Vis:
         xaxis.height_max = 40
         yaxis.width_max = 40
 
-        nested_grid.add_widget(xaxis, row=1, col=1, row_span=row_span, col_span=col_span)
-        nested_grid.add_widget(yaxis, row=0, col=0, row_span=row_span, col_span=col_span)
+        nested_grid.add_widget(xaxis, row=1, col=1)
+        nested_grid.add_widget(yaxis, row=0, col=0)
 
         # Link axes to the view
-        view = nested_grid.add_view(row=0, col=1, row_span=row_span, col_span=col_span)
+        view = nested_grid.add_view(row=0, col=1)
         view.border_color = 'black'
-        view.camera = scene.cameras.PanZoomCamera()#rect=((0,0),(1,1)))
+        view.camera = scene.cameras.PanZoomCamera()
 
         xaxis.link_view(view)
         yaxis.link_view(view)
@@ -132,11 +132,11 @@ class Vis:
         '''
         cur_frame = varr.sel(frame=0)
 
-        self.view_coords = {'image':(0,0), 'hist':(0,1), 'line':(1,0)}
+        self.view_coords = {'image':(0,0), 'hist':(0,2), 'line':(1,0)}
         self.axis_labels = {'image':{'x':'width', 'y':'height'},
                             'hist': {'x':'frequency', 'y':'fluorescence'},
                             'line': {'x':'frame', 'y':'fluorescence'}}
-        self.col_spans = {'image':2, 'hist':1, 'line':2} # THIS CURRENTLY DOES NOT WORK, ALWAYS COL_SPAN OF 1
+        self.col_spans = {'image':2, 'hist':1, 'line':2}
         self.view_dict = {name:self.add_axes_view(
             name=name,
             x_label=self.axis_labels[name]['x'],
