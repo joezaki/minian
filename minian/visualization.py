@@ -736,33 +736,34 @@ class Vis:
                         )
 
         # compute pulse simulation
-        s_pul_dict = {}
-        c_pul_dict = {}
-        for param_ls in S_dict.keys():
-            f_crd = YA_dict[param_ls].coords["frame"]
-            pul_crd = f_crd.values[:500]
+        if g_dict is not None:
+            s_pul_dict = {}
+            c_pul_dict = {}
+            for param_ls in S_dict.keys():
+                f_crd = YA_dict[param_ls].coords["frame"]
+                pul_crd = f_crd.values[:500]
 
-            s_pul, c_pul = xr.apply_ufunc(
-                construct_pulse_response,
-                g_dict[param_ls].compute(),
-                input_core_dims=[["lag"]],
-                output_core_dims=[["t"], ["t"]],
-                vectorize=True,
-                kwargs=dict(length=len(pul_crd)),
-                output_sizes=dict(t=len(pul_crd)),
-            )
-            s_pul, c_pul = (s_pul.assign_coords(t=pul_crd), c_pul.assign_coords(t=pul_crd))
-            if norm:
-                c_pul = xr.apply_ufunc(
-                    normalize,
-                    c_pul.chunk(dict(t=-1)),
-                    input_core_dims=[["t"]],
-                    output_core_dims=[["t"]],
-                    dask="parallelized",
-                    output_dtypes=[c_pul.dtype],
-                ).compute()
-            s_pul_dict[param_ls] = s_pul
-            c_pul_dict[param_ls] = c_pul
+                s_pul, c_pul = xr.apply_ufunc(
+                    construct_pulse_response,
+                    g_dict[param_ls].compute(),
+                    input_core_dims=[["lag"]],
+                    output_core_dims=[["t"], ["t"]],
+                    vectorize=True,
+                    kwargs=dict(length=len(pul_crd)),
+                    output_sizes=dict(t=len(pul_crd)),
+                )
+                s_pul, c_pul = (s_pul.assign_coords(t=pul_crd), c_pul.assign_coords(t=pul_crd))
+                if norm:
+                    c_pul = xr.apply_ufunc(
+                        normalize,
+                        c_pul.chunk(dict(t=-1)),
+                        input_core_dims=[["t"]],
+                        output_core_dims=[["t"]],
+                        dask="parallelized",
+                        output_dtypes=[c_pul.dtype],
+                    ).compute()
+                s_pul_dict[param_ls] = s_pul
+                c_pul_dict[param_ls] = c_pul
 
         # begin plotting
         self.view_coords = {'temporal' :(0,0),
@@ -799,11 +800,12 @@ class Vis:
         ya_plot = scene.Line(pos=np.column_stack((frames, YA_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
                                                 color="#a3a3a3", width=1, parent=temp_view.scene)
         
-        s_pul_plot = scene.Line(pos=np.column_stack((pul_crd, s_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
-                                color='red', width=2, parent=pulse_view.scene)
-        c_pul_plot = scene.Line(pos=np.column_stack((pul_crd, c_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
-                                color='steelblue', width=2, parent=pulse_view.scene)
-        pulse_view.camera.set_range()
+        if g_dict is not None:
+            s_pul_plot = scene.Line(pos=np.column_stack((pul_crd, s_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
+                                    color='red', width=2, parent=pulse_view.scene)
+            c_pul_plot = scene.Line(pos=np.column_stack((pul_crd, c_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
+                                    color='steelblue', width=2, parent=pulse_view.scene)
+            pulse_view.camera.set_range()
         
         cur_footprint = A_dict[tuple(cur_params.values())][0,:,:]
         a_plot = scene.Image(cur_footprint, parent=footprint_view.scene)
@@ -834,8 +836,9 @@ class Vis:
             c_plot.set_data(np.column_stack((frames, C_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
             ya_plot.set_data(np.column_stack((frames, YA_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
 
-            s_pul_plot.set_data(np.column_stack((pul_crd, s_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
-            c_pul_plot.set_data(np.column_stack((pul_crd, c_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+            if g_dict is not None:
+                s_pul_plot.set_data(np.column_stack((pul_crd, s_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+                c_pul_plot.set_data(np.column_stack((pul_crd, c_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
 
             a_plot.set_data(A_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))
 
@@ -851,8 +854,9 @@ class Vis:
             c_plot.set_data(np.column_stack((frames, C_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
             s_plot.set_data(np.column_stack((frames, S_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
 
-            s_pul_plot.set_data(np.column_stack((pul_crd, s_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
-            c_pul_plot.set_data(np.column_stack((pul_crd, c_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+            if g_dict is not None:
+                s_pul_plot.set_data(np.column_stack((pul_crd, s_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+                c_pul_plot.set_data(np.column_stack((pul_crd, c_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
             self.win.setWindowTitle(f'{cur_params};  cell: {cur_cell}')
 
         def update_p(index):
