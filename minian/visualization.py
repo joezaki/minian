@@ -170,8 +170,8 @@ class Vis:
             color='red', width=2, parent=self.view_dict['line'].scene
         )
         
-        # for name, view in self.view_dict.items():
-        self.view_dict['image'].camera.set_range()
+        self.view_dict['image'].camera.rect = (0, 0, cur_frame.sizes['width'], cur_frame.sizes['height'])
+        self.view_dict['image'].camera.aspect = 1
         self.view_dict['hist'].camera.set_range(y=(0,255))
         self.view_dict['line'].camera.set_range(x=(frames[0],frames[-1]))
 
@@ -194,6 +194,7 @@ class Vis:
                 orientation='v',
                 color='darkblue',
                 parent=self.view_dict['hist'].scene)
+            self.view_dict['hist'].camera.set_range(y=(0,255))
 
             cur_vline.set_data(np.column_stack(((index,index),(-20,320))))
 
@@ -221,10 +222,6 @@ class Vis:
         if 'frame' not in after.dims:
             after = after.expand_dims({'frame': 1})
 
-        width  = before.sizes['width']
-        height = before.sizes['height']
-        self.canvas.size = (width*2,height)
-
         # create views
         self.view_coords = {'before':(0,0), 'after':(0,1)}
         before_view = self.add_axes_view(name='before', x_label='width', y_label='height')
@@ -237,8 +234,8 @@ class Vis:
         after_view.add(after_im)
 
         before_view.camera.link(after_view.camera)
-        before_view.camera.set_range(x=(0,before.sizes['width']),
-                                     y=(0,before.sizes['height']))
+        before_view.camera.rect = (0, 0, before.sizes['width'], before.sizes['height'])
+        after_view.camera.rect = (0, 0, after.sizes['width'], after.sizes['height'])
         if not scale_image:
             before_view.camera.aspect=1
             after_view.camera.aspect=1
