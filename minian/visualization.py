@@ -53,6 +53,7 @@ class Vis:
             size=(self.width,self.height),
             bgcolor=bgcolor
             )
+        self.canvas._send_hover_events = True
         self.layout.addWidget(self.canvas.native)
         self.grid = self.canvas.central_widget.add_grid(
             margin=grid_margin,
@@ -111,7 +112,6 @@ class Vis:
             xaxis.height_max = 40
             nested_grid.add_widget(xaxis, row=1, col=1)
         
-
         if add_yaxis:
             yaxis = scene.AxisWidget(orientation='left', axis_label=y_label, **axis_kwargs)
             yaxis.width_max = 40
@@ -365,8 +365,6 @@ class Vis:
             motion,
             magnify=False
     ):
-        
-        self.canvas._send_hover_events = True
 
         # Add a ViewBox with pan/zoom
         self.view_coords = {'motion': (0,0)}
@@ -446,7 +444,6 @@ class Vis:
                                 'high':trace_smth_high}
         
         # start plotting
-        self.canvas._send_hover_events = True
         seeds = example_seeds.index
         view_dict = {}
         plot_coords = list(itt.product(range(int(np.ceil(len(seeds)/cols))),range(cols)))
