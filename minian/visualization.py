@@ -724,16 +724,17 @@ class Vis:
 
         if norm:
             for var in activities_dict.keys():
-                for param in activities_dict[var]:
-                    activities_dict[var][param] = xr.apply_ufunc(
-                        normalize,
-                        activities_dict[var][param].chunk(dict(frame=-1)).compute(),
-                        input_core_dims=[["frame"]],
-                        output_core_dims=[["frame"]],
-                        vectorize=True,
-                        dask="parallelized",
-                        output_dtypes=[activities_dict[var][param].dtype],
-                        )
+                if activities_dict[var] is not None:
+                    for param in activities_dict[var]:
+                        activities_dict[var][param] = xr.apply_ufunc(
+                            normalize,
+                            activities_dict[var][param].chunk(dict(frame=-1)).compute(),
+                            input_core_dims=[["frame"]],
+                            output_core_dims=[["frame"]],
+                            vectorize=True,
+                            dask="parallelized",
+                            output_dtypes=[activities_dict[var][param].dtype],
+                            )
 
         # compute pulse simulation
         if g_dict is not None:
@@ -770,8 +771,8 @@ class Vis:
                             'pulse'    :(1,0),
                             'footprint':(1,1)}
         col_spans = {'temporal'  :2,
-                          'pulse'     :1,
-                          'footprint' :1}
+                     'pulse'     :1,
+                     'footprint' :1}
         temp_view  = self.add_axes_view(
             name='temporal',
             x_label='frame',
@@ -779,12 +780,13 @@ class Vis:
             col_span=col_spans['temporal'],
             magnify=magnify
             )
-        pulse_view = self.add_axes_view(
-            name='pulse',
-            x_label='t',
-            y_label='Response (A.U.)',
-            col_span=col_spans['pulse']
-            )
+        if g_dict is not None:
+            pulse_view = self.add_axes_view(
+                name='pulse',
+                x_label='t',
+                y_label='Response (A.U.)',
+                col_span=col_spans['pulse']
+                )
         footprint_view = self.add_axes_view(
             name='footprint',
             x_label='width',
@@ -793,8 +795,9 @@ class Vis:
             )
 
         # initialize data in all subplots
-        s_plot = scene.Line(pos=np.column_stack((frames, S_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
-                                                color="#3c8a1b", width=1, parent=temp_view.scene)
+        if activities_dict['S'] is not None:
+            s_plot = scene.Line(pos=np.column_stack((frames, S_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
+                                                    color="#3c8a1b", width=1, parent=temp_view.scene)
         c_plot = scene.Line(pos=np.column_stack((frames, C_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
                                                 color="#ff8b32", width=1, parent=temp_view.scene)
         ya_plot = scene.Line(pos=np.column_stack((frames, YA_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
@@ -811,10 +814,9 @@ class Vis:
         a_plot = scene.Image(cur_footprint, parent=footprint_view.scene)
         footprint_view.camera.rect = (0, 0, cur_footprint.sizes['width'], cur_footprint.sizes['height'])
 
-
         # Slider configs
         cell_slider = QSlider(Qt.Horizontal)
-        cell_slider.setRange(0, YA_dict[tuple(cur_params.values())].shape[0] - 1)
+        cell_slider.setRange(0, len(units) - 1)
         cell_slider.setValue(0)
         self.layout.addWidget(cell_slider)
 
@@ -831,8 +833,8 @@ class Vis:
         # Update which cell is plotted
         def update_cell(index):
             cur_cell[0] = units[index]
-            
-            s_plot.set_data(np.column_stack((frames, S_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+            if activities_dict['S'] is not None:
+                s_plot.set_data(np.column_stack((frames, S_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
             c_plot.set_data(np.column_stack((frames, C_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
             ya_plot.set_data(np.column_stack((frames, YA_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
 
@@ -842,7 +844,7 @@ class Vis:
 
             a_plot.set_data(A_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))
 
-            self.win.setWindowTitle(f'{cur_params};  cell: {units[index]}')
+            self.win.setWindowTitle(f'{cur_params};  cell: {cur_cell[0]}')
             self.canvas.update()
 
         update_cell(0)
@@ -857,7 +859,7 @@ class Vis:
             if g_dict is not None:
                 s_pul_plot.set_data(np.column_stack((pul_crd, s_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
                 c_pul_plot.set_data(np.column_stack((pul_crd, c_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
-            self.win.setWindowTitle(f'{cur_params};  cell: {cur_cell}')
+            self.win.setWindowTitle(f'{cur_params};  cell: {cur_cell[0]}')
 
         def update_p(index):
             cur_params['p'] = params['p'][index]
