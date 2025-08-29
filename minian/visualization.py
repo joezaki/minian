@@ -135,7 +135,8 @@ class Vis:
             yaxis.link_view(view)
 
         return view
-    
+
+
 
     def draw_multiscale_image(
             self,
@@ -169,9 +170,23 @@ class Vis:
                     )
                 image.transform = STTransform(translate=(frame_tile[0],unit_id_tile[0]))
                 image_ls.append(image)
-        
 
-    
+
+
+    def on_key_press(
+            self,
+            event
+            ):
+        cur_slider_val = self.slider.value()
+        if event.key == 'Left':
+            self.slider.setValue(max(self.slider_range[0], cur_slider_val - 1))
+        if event.key == 'Right':
+            self.slider.setValue(min(cur_slider_val + 1, self.slider_range[1]))
+        else:
+            pass
+
+
+
     def visualize_raw_video(
             self, 
             varr,
@@ -232,10 +247,11 @@ class Vis:
         on_mouse_double_click(0)
 
         # Slider
-        slider = QSlider(Qt.Horizontal)
-        slider.setRange(0, varr.sizes['frame'] - 1)
-        slider.setValue(0)
-        self.layout.addWidget(slider)
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider_range = (0, varr.sizes['frame']-1)
+        self.slider.setRange(self.slider_range[0],self.slider_range[1])
+        self.slider.setValue(0)
+        self.layout.addWidget(self.slider)
         
         # Update line on slider change
         def update_plot(index):
@@ -257,7 +273,10 @@ class Vis:
             self.win.setWindowTitle(f'frame = {index}')
             self.canvas.update()
 
-        slider.valueChanged.connect(update_plot)
+        self.slider.valueChanged.connect(update_plot)
+
+        # add capacity to move slider with left and right keys
+        self.canvas.events.key_press.connect(self.on_key_press)
 
 
 
@@ -300,10 +319,11 @@ class Vis:
             after_view.camera.aspect=1
 
         # Slider
-        slider = QSlider(Qt.Horizontal)
-        slider.setRange(0, before.sizes['frame'] - 1)
-        slider.setValue(0)
-        self.layout.addWidget(slider)
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider_range = (0, before.sizes['frame']-1)
+        self.slider.setRange(self.slider_range[0],self.slider_range[1])
+        self.slider.setValue(0)
+        self.layout.addWidget(self.slider)
         
         # Update line on slider change
         def update_plot(index):
@@ -311,8 +331,10 @@ class Vis:
             after_im.set_data(after.isel(frame=index))
             self.win.setWindowTitle(f'{self.title}: frame = {index}')
             self.canvas.update()
-        slider.valueChanged.connect(update_plot)
-    
+        self.slider.valueChanged.connect(update_plot)
+
+        # add capacity to move slider with left and right keys
+        self.canvas.events.key_press.connect(self.on_key_press)
 
 
     def visualize_preprocess(
@@ -394,10 +416,11 @@ class Vis:
             proc_cont_view.camera.aspect = 1
 
         # Slider
-        slider = QSlider(Qt.Horizontal)
-        slider.setRange(0, len(image_ls) - 1)
-        slider.setValue(0)
-        self.layout.addWidget(slider)
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider_range = (0, len(image_ls)-1)
+        self.slider.setRange(self.slider_range[0], self.slider_range[1])
+        self.slider.setValue(0)
+        self.layout.addWidget(self.slider)
         
         # Update line on slider change
         def update_plot(index):
@@ -406,7 +429,10 @@ class Vis:
             self.win.setWindowTitle(f'{self.title}: {title_ls[index]}')
             self.canvas.update()
 
-        slider.valueChanged.connect(update_plot)
+        self.slider.valueChanged.connect(update_plot)
+
+        # add capacity to move slider with left and right keys
+        self.canvas.events.key_press.connect(self.on_key_press)
 
 
 
@@ -535,10 +561,11 @@ class Vis:
                 view_dict[seed].camera.link(view_dict[seeds[0]].camera)
 
         # Slider
-        slider = QSlider(Qt.Horizontal)
-        slider.setRange(0, len(noise_freq_list) - 1)
-        slider.setValue(0)
-        self.layout.addWidget(slider)
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider_range = (0, len(noise_freq_list)-1)
+        self.slider.setRange(self.slider_range[0],self.slider_range[1])
+        self.slider.setValue(0)
+        self.layout.addWidget(self.slider)
         
         # Update line on slider change
         def update_plot(index):
@@ -554,12 +581,15 @@ class Vis:
 
         # configure view and add double click reset
         def on_mouse_double_click(event):
-            update_plot(slider.value())
+            update_plot(self.slider.value())
         self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
         on_mouse_double_click(0)
 
         update_plot(0)
-        slider.valueChanged.connect(update_plot)
+        self.slider.valueChanged.connect(update_plot)
+
+        # add capacity to move slider with left and right keys
+        self.canvas.events.key_press.connect(self.on_key_press)
     
 
 
@@ -691,10 +721,11 @@ class Vis:
         on_mouse_double_click(0)
 
         # Slider
-        slider = QSlider(Qt.Horizontal)
-        slider.setRange(0, len(sprs_ls) - 1)
-        slider.setValue(0)
-        self.layout.addWidget(slider)
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider_range = (0, len(sprs_ls)-1)
+        self.slider.setRange(self.slider_range[0],self.slider_range[1])
+        self.slider.setValue(0)
+        self.layout.addWidget(self.slider)
         
         # Update line on slider change
         def update_plot(index):
@@ -710,7 +741,10 @@ class Vis:
             self.canvas.update()
 
         update_plot(0)
-        slider.valueChanged.connect(update_plot)
+        self.slider.valueChanged.connect(update_plot)
+
+        # add capacity to move slider with left and right keys
+        self.canvas.events.key_press.connect(self.on_key_press)
 
 
 
@@ -921,19 +955,21 @@ class Vis:
         cur_footprint = A_dict[tuple(cur_params.values())][0,:,:]
         a_plot = scene.Image(cur_footprint, parent=footprint_view.scene)
 
-        # Slider configs
-        cell_slider = QSlider(Qt.Horizontal)
-        cell_slider.setRange(0, len(units) - 1)
-        cell_slider.setValue(0)
-        self.layout.addWidget(cell_slider)
+        # configure cell slider
+        self.slider = QSlider(Qt.Horizontal)
+        self.slider_range = (0, len(units)-1)
+        self.slider.setRange(self.slider_range[0],self.slider_range[1])
+        self.slider.setValue(0)
+        self.layout.addWidget(self.slider)
 
-        param_slider_ls = []
+        # configure sliders for params
+        param_slider_dict = {}
         for param in params:
             param_slider = QSlider(Qt.Horizontal)
             param_slider.setRange(0, len(params[param]) - 1)
             param_slider.setValue(0)
             self.layout.addWidget(param_slider)
-            param_slider_ls.append(param_slider)
+            param_slider_dict[param] = param_slider
 
         # Update which cell is plotted
         def update_cell(index):
@@ -964,7 +1000,7 @@ class Vis:
             self.canvas.update()
 
         update_cell(0)
-        cell_slider.valueChanged.connect(update_cell)
+        self.slider.valueChanged.connect(update_cell)
 
         # Update parameters one by one
         def update_subplots():
@@ -1004,9 +1040,13 @@ class Vis:
             cur_params['noise_freq'] = params['noise_freq'][index]
             update_subplots()
 
-        update_funcs = [update_p, update_sprs, update_add, update_noise]
-        for i, param in enumerate(params):
-            param_slider_ls[i].valueChanged.connect(update_funcs[i])
+        update_funcs = dict(
+            p=update_p,
+            sparse_penal=update_sprs,
+            add_lag=update_add,
+            noise_freq=update_noise)
+        for param in params:
+            param_slider_dict[param].valueChanged.connect(update_funcs[param])
         
         # configure view and add double click reset
         def on_mouse_double_click(event):
@@ -1016,6 +1056,9 @@ class Vis:
             temp_view.camera.set_range()
         self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
         on_mouse_double_click(0)        
+
+        # add capacity to move slider with left and right keys
+        self.canvas.events.key_press.connect(self.on_key_press)
 
 
 
