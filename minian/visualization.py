@@ -174,7 +174,8 @@ class Vis:
     
     def visualize_raw_video(
             self, 
-            varr
+            varr,
+            scale_image=True
             ):
         '''
         Visualize original raw video along with histogram of pixel values for
@@ -221,7 +222,8 @@ class Vis:
         )
         
         self.view_dict['image'].camera.rect = (0, 0, cur_frame.sizes['width'], cur_frame.sizes['height'])
-        self.view_dict['image'].camera.aspect = 1
+        if not scale_image:
+            self.view_dict['image'].camera.aspect = 1
         self.view_dict['hist'].camera.set_range(y=(0,255))
         self.view_dict['line'].camera.set_range(x=(frames[0],frames[-1]))
 
@@ -259,7 +261,7 @@ class Vis:
             self,
             before,
             after,
-            scale_image=False
+            scale_image=True
     ):
         '''
         Visualize two side-by-side images or videos before (left) and
@@ -311,7 +313,7 @@ class Vis:
             self,
             frame,
             func,
-            scale_image=False,
+            scale_image=True,
             **kwargs
     ):
         
@@ -422,7 +424,8 @@ class Vis:
             max_proj,
             seeds,
             mask=None,
-            marker_scaling=1.5
+            marker_scaling=1.5,
+            scale_image=True
     ):
         
         if mask is None:
@@ -455,7 +458,8 @@ class Vis:
         max_proj_im = scene.Image(max_proj, parent=view.scene)
 
         view.camera.rect = (0, 0, max_proj.sizes['width'], max_proj.sizes['height'])
-        view.camera.aspect = 1
+        if not scale_image:
+            view.camera.aspect = 1
     
 
 
@@ -540,6 +544,7 @@ class Vis:
             b,
             f,
             multiscale=True,
+            scale_image=True
     ):
 
         data_to_plot = {
@@ -577,8 +582,9 @@ class Vis:
         view_dict['f'].camera.set_range()
         
         # link the spatial subplots together
-        view_dict['A'].camera.aspect = 1
-        view_dict['b'].camera.aspect = 1
+        if not scale_image:
+            view_dict['A'].camera.aspect = 1
+            view_dict['b'].camera.aspect = 1
         view_dict['A'].camera.link(view_dict['b'].camera)
     
 
@@ -588,7 +594,8 @@ class Vis:
             units,
             A_dict,
             C_dict,
-            norm=True
+            norm=True,
+            scale_image=True
     ):
         
         sprs_ls = list(A_dict.keys())
@@ -625,8 +632,9 @@ class Vis:
             row_span=2)
         
         a_bin_view.camera.link(a_cont_view.camera)
-        a_bin_view.camera.aspect = 1
-        a_cont_view.camera.aspect = 1
+        if not scale_image:
+            a_bin_view.camera.aspect = 1
+            a_cont_view.camera.aspect = 1
 
         # plot footprints
         A_binary = scene.Image((A_dict[sprs_ls[0]] > 0).sum("unit_id").astype(np.float32), parent=a_bin_view.scene)
@@ -674,7 +682,8 @@ class Vis:
     def visualize_spatial_update(
             self,
             A,
-            A_new
+            A_new,
+            scale_image=True
     ):
 
         plot_coords = list(itt.product(range(2),range(2)))
@@ -692,7 +701,8 @@ class Vis:
 
             plot = scene.Image(data, parent=view_ls[i].scene)
             view.camera.rect = (0, 0, data.sizes['width'], data.sizes['height'])
-            view.camera.aspect = 1
+            if not scale_image:
+                view.camera.aspect = 1
 
         for i in np.arange(1,4):
             view_ls[0].camera.link(view_ls[i].camera)
@@ -704,7 +714,8 @@ class Vis:
             b,
             f,
             b_new,
-            f_new
+            f_new,
+            scale_image=True
     ):
 
         plot_coords = list(itt.product(range(2),range(2)))
@@ -732,7 +743,8 @@ class Vis:
                 view_ls[i].camera.set_range()
             else:
                 plot = scene.Image(data, parent=view_ls[i].scene)
-                view_ls[i].camera.aspect = 1
+                if not scale_image:
+                    view_ls[i].camera.aspect = 1
                 view_ls[i].camera.rect = (0, 0, data.sizes['width'], data.sizes['height'])
         
         # temporarily link spatial and temporal plots by index
@@ -961,7 +973,8 @@ class Vis:
             method='maxidx',
             threshold=0,
             cm=colormap.get_colormap('Spectral_r'),
-            alpha=0.7
+            alpha=0.7,
+            scale_image=True
     ):
         
         rand_color = np.random.choice(np.arange(1,A.shape[0]+1), A.shape[0], replace=False)
@@ -996,8 +1009,9 @@ class Vis:
         max_proj_im = scene.Image(max_proj.astype(np.float32), cmap='gray', parent=max_proj_view.scene)
         a_im        = scene.Image(maxA.astype(np.float32), cmap='Spectral_r', parent=a_view.scene)
 
-        max_proj_view.camera.aspect = 1
-        a_view.camera.aspect = 1
+        if not scale_image:
+            max_proj_view.camera.aspect = 1
+            a_view.camera.aspect = 1
         max_proj_view.camera.link(a_view.camera)
         width, height = (max_proj.sizes['width'], max_proj.sizes['height'])
         max_proj_view.camera.rect = (0, 0, width, height)
