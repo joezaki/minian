@@ -221,11 +221,15 @@ class Vis:
             color='red', width=2, parent=self.view_dict['line'].scene
         )
         
-        self.view_dict['image'].camera.rect = (0, 0, cur_frame.sizes['width'], cur_frame.sizes['height'])
-        if not scale_image:
-            self.view_dict['image'].camera.aspect = 1
-        self.view_dict['hist'].camera.set_range(y=(0,255))
-        self.view_dict['line'].camera.set_range(x=(frames[0],frames[-1]))
+        # configure view and add double click reset
+        def on_mouse_double_click(event):
+            self.view_dict['image'].camera.rect = (0, 0, cur_frame.sizes['width'], cur_frame.sizes['height'])
+            if not scale_image:
+                self.view_dict['image'].camera.aspect = 1
+            self.view_dict['hist'].camera.set_range(y=(0,255))
+            self.view_dict['line'].camera.set_range(x=(frames[0],frames[-1]))
+        self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
+        on_mouse_double_click(0)
 
         # Slider
         slider = QSlider(Qt.Horizontal)
@@ -280,14 +284,17 @@ class Vis:
         after_view = self.add_axes_view(name='after', x_label='width', y_label='height')
 
         # add images to views
-        before_im = scene.Image(before.sel(frame=0), parent=self.canvas.scene)
-        before_view.add(before_im)
-        after_im = scene.Image(after.sel(frame=0), parent=before_view)
-        after_view.add(after_im)
+        before_im = scene.Image(before.sel(frame=0), parent=before_view.scene)
+        after_im = scene.Image(after.sel(frame=0), parent=after_view.scene)
 
+        # configure view and add double click reset
         before_view.camera.link(after_view.camera)
-        before_view.camera.rect = (0, 0, before.sizes['width'], before.sizes['height'])
-        after_view.camera.rect = (0, 0, after.sizes['width'], after.sizes['height'])
+        def on_mouse_double_click(event):
+            before_view.camera.rect = (0, 0, before.sizes['width'], before.sizes['height'])
+            after_view.camera.rect  = (0, 0, after.sizes['width'],  after.sizes['height'])
+        self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
+        on_mouse_double_click(0)
+
         if not scale_image:
             before_view.camera.aspect=1
             after_view.camera.aspect=1
@@ -304,7 +311,6 @@ class Vis:
             after_im.set_data(after.isel(frame=index))
             self.win.setWindowTitle(f'{self.title}: frame = {index}')
             self.canvas.update()
-
         slider.valueChanged.connect(update_plot)
     
 
@@ -367,8 +373,16 @@ class Vis:
         iso = IsolineFilter(level=5, width=2, color='white')
         processed_contour.attach(iso)
         
+        # configure view and add double click reset
+        def on_mouse_double_click(event):
+            orig_view.camera.rect      = (0, 0, frame.sizes['width'], frame.sizes['height'])
+            orig_cont_view.camera.rect = (0, 0, frame.sizes['width'], frame.sizes['height'])
+            proc_view.camera.rect      = (0, 0, frame.sizes['width'], frame.sizes['height'])
+            proc_cont_view.camera.rect = (0, 0, frame.sizes['width'], frame.sizes['height'])
+        self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
+        on_mouse_double_click(0)
+
         # share axes
-        orig_view.camera.set_range()
         orig_view.camera.link(orig_cont_view.camera)
         orig_view.camera.link(proc_view.camera)
         orig_view.camera.link(proc_cont_view.camera)
@@ -378,10 +392,6 @@ class Vis:
             orig_cont_view.camera.aspect = 1
             proc_view.camera.aspect = 1
             proc_cont_view.camera.aspect = 1
-        orig_view.camera.rect      = (0, 0, frame.sizes['width'], frame.sizes['height'])
-        orig_cont_view.camera.rect = (0, 0, frame.sizes['width'], frame.sizes['height'])
-        proc_view.camera.rect      = (0, 0, frame.sizes['width'], frame.sizes['height'])
-        proc_cont_view.camera.rect = (0, 0, frame.sizes['width'], frame.sizes['height'])
 
         # Slider
         slider = QSlider(Qt.Horizontal)
@@ -415,7 +425,12 @@ class Vis:
                                 color='#ff7f0e', width=1, parent=view.scene)
         height_line = scene.Line(pos=np.column_stack((frames, motion.sel(shift_dim="height"))),
                                 color='#1f77b4', width=1, parent=view.scene)
-        view.camera.set_range()
+        
+        # configure view and add double click reset
+        def on_mouse_double_click(event):
+            view.camera.set_range()
+        self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
+        on_mouse_double_click(0)
 
 
 
@@ -457,7 +472,12 @@ class Vis:
         # add max proj
         max_proj_im = scene.Image(max_proj, parent=view.scene)
 
-        view.camera.rect = (0, 0, max_proj.sizes['width'], max_proj.sizes['height'])
+        # configure view and add double click reset
+        def on_mouse_double_click(event):
+            view.camera.rect = (0, 0, max_proj.sizes['width'], max_proj.sizes['height'])
+        self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
+        on_mouse_double_click(0)
+
         if not scale_image:
             view.camera.aspect = 1
     
@@ -532,6 +552,12 @@ class Vis:
             self.win.setWindowTitle(f'noise frequency: {noise_freq_list[index]}')
             self.canvas.update()
 
+        # configure view and add double click reset
+        def on_mouse_double_click(event):
+            update_plot(slider.value())
+        self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
+        on_mouse_double_click(0)
+
         update_plot(0)
         slider.valueChanged.connect(update_plot)
     
@@ -576,10 +602,14 @@ class Vis:
             color="#07117b", width=1, parent=view_dict['f'].scene
         )
 
-        view_dict['A'].camera.rect = (0, 0, A.sizes['width'], A.sizes['height'])
-        view_dict['b'].camera.rect = (0, 0, b.sizes['width'], b.sizes['height'])
-        view_dict['C'].camera.rect = (0, 0, C.sizes['frame'], C.sizes['unit_id'])
-        view_dict['f'].camera.set_range()
+        # configure view and add double click reset
+        def on_mouse_double_click(event):
+            view_dict['A'].camera.rect = (0, 0, A.sizes['width'], A.sizes['height'])
+            view_dict['b'].camera.rect = (0, 0, b.sizes['width'], b.sizes['height'])
+            view_dict['C'].camera.rect = (0, 0, C.sizes['frame'], C.sizes['unit_id'])
+            view_dict['f'].camera.set_range()
+        self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
+        on_mouse_double_click(0)
         
         # link the spatial subplots together
         if not scale_image:
@@ -640,8 +670,6 @@ class Vis:
         A_binary = scene.Image((A_dict[sprs_ls[0]] > 0).sum("unit_id").astype(np.float32), parent=a_bin_view.scene)
 
         A_cont = scene.Image(A_dict[sprs_ls[0]].sum("unit_id").astype(np.float32), parent=a_cont_view.scene)
-        a_bin_view.camera.rect = (0, 0, A_dict[sprs_ls[0]].sizes['width'], A_dict[sprs_ls[0]].sizes['height'])
-        a_cont_view.camera.rect = (0, 0, A_dict[sprs_ls[0]].sizes['width'], A_dict[sprs_ls[0]].sizes['height'])
 
         # plot temporal components
         C_ls = []
@@ -653,7 +681,14 @@ class Vis:
             text.font_size= 10
             text.pos = -10, i+0.5
             C_ls.append(line)
-        temp_view.camera.set_range()
+
+        # configure view and add double click reset
+        def on_mouse_double_click(event):
+            a_bin_view.camera.rect = (0, 0, A_dict[sprs_ls[0]].sizes['width'], A_dict[sprs_ls[0]].sizes['height'])
+            a_cont_view.camera.rect = (0, 0, A_dict[sprs_ls[0]].sizes['width'], A_dict[sprs_ls[0]].sizes['height'])
+            temp_view.camera.set_range()
+        self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
+        on_mouse_double_click(0)
 
         # Slider
         slider = QSlider(Qt.Horizontal)
@@ -707,6 +742,13 @@ class Vis:
         for i in np.arange(1,4):
             view_ls[0].camera.link(view_ls[i].camera)
 
+        # configure view and add double click reset
+        def on_mouse_double_click(event):
+            for i, (name, data) in enumerate(data_to_plot.items()):
+                view_ls[i].camera.rect = (0, 0, data.sizes['width'], data.sizes['height'])
+        self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
+        on_mouse_double_click(0)
+
 
 
     def visualize_spatial_bg(
@@ -740,14 +782,22 @@ class Vis:
             if name[0] == 'f':
                 plot = scene.Line(pos=np.column_stack((data.frame, data)),
                                 color='#07117b', width=1, parent=view_ls[i].scene)
-                view_ls[i].camera.set_range()
             else:
                 plot = scene.Image(data, parent=view_ls[i].scene)
                 if not scale_image:
                     view_ls[i].camera.aspect = 1
-                view_ls[i].camera.rect = (0, 0, data.sizes['width'], data.sizes['height'])
+
+        # configure view and add double click reset
+        def on_mouse_double_click(event):
+            for i, (name, data) in enumerate(data_to_plot.items()):
+                if name[0] == 'f':
+                    view_ls[i].camera.set_range()
+                else:
+                    view_ls[i].camera.rect = (0, 0, data.sizes['width'], data.sizes['height'])
+        self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
+        on_mouse_double_click(0)
         
-        # temporarily link spatial and temporal plots by index
+        # link spatial and temporal plots by index
         view_ls[0].camera.link(view_ls[2].camera)
         view_ls[1].camera.link(view_ls[3].camera)
 
@@ -850,23 +900,26 @@ class Vis:
 
         # initialize data in all subplots
         if activities_dict['S'] is not None:
-            s_plot = scene.Line(pos=np.column_stack((frames, S_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
-                                                    color="#3c8a1b", width=1, parent=temp_view.scene)
-        c_plot = scene.Line(pos=np.column_stack((frames, C_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
-                                                color="#ff8b32", width=1, parent=temp_view.scene)
-        ya_plot = scene.Line(pos=np.column_stack((frames, YA_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
-                                                color="#a3a3a3", width=1, parent=temp_view.scene)
+            s_plot = scene.Line(
+                pos=np.column_stack((frames, S_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
+                color="#3c8a1b", width=1, parent=temp_view.scene)
+        c_plot = scene.Line(
+            pos=np.column_stack((frames, C_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
+            color="#ff8b32", width=1, parent=temp_view.scene)
+        ya_plot = scene.Line(
+            pos=np.column_stack((frames, YA_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
+            color="#a3a3a3", width=1, parent=temp_view.scene)
         
         if g_dict is not None:
-            s_pul_plot = scene.Line(pos=np.column_stack((pul_crd, s_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
-                                    color='red', width=2, parent=pulse_view.scene)
-            c_pul_plot = scene.Line(pos=np.column_stack((pul_crd, c_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
-                                    color='steelblue', width=2, parent=pulse_view.scene)
-            pulse_view.camera.set_range()
+            s_pul_plot = scene.Line(
+                pos=np.column_stack((pul_crd, s_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
+                color='red', width=2, parent=pulse_view.scene)
+            c_pul_plot = scene.Line(
+                pos=np.column_stack((pul_crd, c_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))),
+                color='steelblue', width=2, parent=pulse_view.scene)
         
         cur_footprint = A_dict[tuple(cur_params.values())][0,:,:]
         a_plot = scene.Image(cur_footprint, parent=footprint_view.scene)
-        footprint_view.camera.rect = (0, 0, cur_footprint.sizes['width'], cur_footprint.sizes['height'])
 
         # Slider configs
         cell_slider = QSlider(Qt.Horizontal)
@@ -882,8 +935,6 @@ class Vis:
             self.layout.addWidget(param_slider)
             param_slider_ls.append(param_slider)
 
-        temp_view.camera.set_range()
-
         # Update which cell is plotted
         def update_cell(index):
             cur_cell[0] = units[index]
@@ -897,7 +948,8 @@ class Vis:
                     s_pul_plot.set_data(np.column_stack((pul_crd, s_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
                     c_pul_plot.set_data(np.column_stack((pul_crd, c_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
 
-                a_plot.set_data(A_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))
+                cur_footprint = A_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0])
+                a_plot.set_data(cur_footprint)
             except KeyError: # removes temporal activities if current cell is dropped at current params
                 if activities_dict['S'] is not None:
                     s_plot.set_data(np.column_stack((0,0)))
@@ -955,6 +1007,15 @@ class Vis:
         update_funcs = [update_p, update_sprs, update_add, update_noise]
         for i, param in enumerate(params):
             param_slider_ls[i].valueChanged.connect(update_funcs[i])
+        
+        # configure view and add double click reset
+        def on_mouse_double_click(event):
+            if g_dict is not None:
+                pulse_view.camera.set_range()
+            footprint_view.camera.rect = (0, 0, cur_footprint.sizes['width'], cur_footprint.sizes['height'])
+            temp_view.camera.set_range()
+        self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
+        on_mouse_double_click(0)        
 
 
 
@@ -980,10 +1041,17 @@ class Vis:
                     self.draw_multiscale_image(data=data, view=view_ls[i])
                 else:
                     scene.Image(data, parent=view_ls[i].scene)
-                view.camera.rect = (0, 0, frame_max, unit_id_max)
 
         for i in np.arange(1,len(components_dict)):
             view_ls[0].camera.link(view_ls[i].camera)
+
+        # configure view and add double click reset
+        def on_mouse_double_click(event):
+            for i, (name, data) in enumerate(components_dict.items()):
+                if data is not None:
+                    view.camera.rect = (0, 0, frame_max, unit_id_max)
+        self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
+        on_mouse_double_click(0)
 
 
 
@@ -1035,8 +1103,14 @@ class Vis:
             a_view.camera.aspect = 1
         max_proj_view.camera.link(a_view.camera)
         width, height = (max_proj.sizes['width'], max_proj.sizes['height'])
-        max_proj_view.camera.rect = (0, 0, width, height)
-        a_view.camera.rect = (0, 0, width, height)
+
+        # configure view and add double click reset
+        def on_mouse_double_click(event):
+            max_proj_view.camera.rect = (0, 0, width, height)
+            a_view.camera.rect = (0, 0, width, height)
+        self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
+        on_mouse_double_click(0)
+
 
 
 def normalize(a: np.ndarray) -> np.ndarray:
