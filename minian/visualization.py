@@ -13,8 +13,10 @@ from uuid import uuid4
 from vispy import scene, use
 from vispy.scene import visuals
 from vispy.visuals.filters import IsolineFilter
+from vispy.visuals.transforms import STTransform
 from vispy.scene.cameras import Magnify1DCamera
 from vispy.color import colormap
+from vispy import gloo
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QSlider
 from PyQt5.QtCore import Qt
 use('pyqt5')
@@ -64,6 +66,8 @@ class Vis:
         # dictionary of all views and axes to be added
         self.view_coords = {}
         self.view_dict = {}
+
+        self.max_gl_size = gloo.gl.glGetParameter(gloo.gl.GL_MAX_TEXTURE_SIZE)
 
 
 
@@ -132,6 +136,40 @@ class Vis:
 
         return view
     
+
+    def draw_multiscale_image(
+            self,
+            data,
+            view
+    ):
+        '''
+        If a matrix is larger than the GL_MAX_TEXTURE_SIZE limit, use this
+        to plot the same image as multiple smaller images tiled together.
+        '''
+
+        frames = data.sizes['frame']
+        unit_ids = data.sizes['unit_id']
+        clim = (data.min().values, data.max().values)
+
+        # compute tile indices
+        frame_tiles = np.ceil(frames / self.max_gl_size)
+        unit_id_tiles = np.ceil(unit_ids / self.max_gl_size)
+        frame_indices = np.array_split(data['frame'], frame_tiles)
+        unit_id_indices = np.array_split(data['unit_id'], unit_id_tiles)
+
+        # plot all tiles
+        image_ls = []
+        for frame_tile in frame_indices:
+            for unit_id_tile in unit_id_indices:
+                image = scene.Image(data.sel(
+                    frame=frame_tile,
+                    unit_id=unit_id_tile),
+                    clim=clim,
+                    parent=view.scene
+                    )
+                image.transform = STTransform(translate=(frame_tile[0],unit_id_tile[0]))
+                image_ls.append(image)
+        
 
     
     def visualize_raw_video(
@@ -500,7 +538,8 @@ class Vis:
             A,
             C,
             b,
-            f
+            f,
+            multiscale=True,
     ):
 
         data_to_plot = {
@@ -523,8 +562,11 @@ class Vis:
 
         a_plot = scene.Image(data_to_plot['A'], parent=view_dict['A'].scene)
         b_plot = scene.Image(data_to_plot['b'], parent=view_dict['b'].scene)
-        c_plot = scene.Image(data_to_plot['C'], parent=view_dict['C'].scene)
-        f_plot = scene.Line(
+        if multiscale:
+            self.draw_multiscale_image(data=data_to_plot['C'], view=view_dict['C'])
+        else:
+            scene.Image(data_to_plot['C'], parent=view_dict['C'].scene)
+        scene.Line(
             pos=np.column_stack((f.frame, f)),
             color="#07117b", width=1, parent=view_dict['f'].scene
         )
@@ -886,18 +928,26 @@ class Vis:
     def visualize_temporal_components(
             self,
             components_dict,
-            cols=2
+            cols=2,
+            multiscale=True
     ):
         
         plot_coords = list(itt.product(range(int(np.ceil(len(components_dict)/cols))),range(cols)))
         self.view_coords = {name:coord for name, coord in zip(components_dict.keys(), plot_coords)}
+
+        unit_id_max = np.max([data['unit_id'].max() for data in components_dict.values() if data is not None])
+        frame_max   = np.max([data['frame'].max()   for data in components_dict.values() if data is not None])
+
         view_ls = []
         for i, (name, data) in enumerate(components_dict.items()):
             view = self.add_axes_view(name, x_label='frame', y_label='unit_id')
             view_ls.append(view)
-            plot = scene.Image(data, parent=view_ls[i].scene)
             if data is not None:
-                view.camera.rect = (0, 0, data.sizes['frame'], data.sizes['unit_id'])
+                if multiscale:
+                    self.draw_multiscale_image(data=data, view=view_ls[i])
+                else:
+                    scene.Image(data, parent=view_ls[i].scene)
+                view.camera.rect = (0, 0, frame_max, unit_id_max)
 
         for i in np.arange(1,len(components_dict)):
             view_ls[0].camera.link(view_ls[i].camera)
