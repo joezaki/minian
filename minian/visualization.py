@@ -887,16 +887,26 @@ class Vis:
         # Update which cell is plotted
         def update_cell(index):
             cur_cell[0] = units[index]
-            if activities_dict['S'] is not None:
-                s_plot.set_data(np.column_stack((frames, S_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
-            c_plot.set_data(np.column_stack((frames, C_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
-            ya_plot.set_data(np.column_stack((frames, YA_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+            try:
+                if activities_dict['S'] is not None:
+                    s_plot.set_data(np.column_stack((frames, S_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+                c_plot.set_data(np.column_stack((frames, C_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+                ya_plot.set_data(np.column_stack((frames, YA_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
 
-            if g_dict is not None:
-                s_pul_plot.set_data(np.column_stack((pul_crd, s_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
-                c_pul_plot.set_data(np.column_stack((pul_crd, c_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+                if g_dict is not None:
+                    s_pul_plot.set_data(np.column_stack((pul_crd, s_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+                    c_pul_plot.set_data(np.column_stack((pul_crd, c_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
 
-            a_plot.set_data(A_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))
+                a_plot.set_data(A_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))
+            except KeyError: # removes temporal activities if current cell is dropped at current params
+                if activities_dict['S'] is not None:
+                    s_plot.set_data(np.column_stack((0,0)))
+                c_plot.set_data(np.column_stack((0,0)))
+                ya_plot.set_data(np.column_stack((0,0)))
+
+                if g_dict is not None:
+                    s_pul_plot.set_data(np.column_stack((0,0)))
+                    c_pul_plot.set_data(np.column_stack((0,0)))
 
             self.win.setWindowTitle(f'{cur_params};  cell: {cur_cell[0]}')
             self.canvas.update()
@@ -906,13 +916,24 @@ class Vis:
 
         # Update parameters one by one
         def update_subplots():
-            ya_plot.set_data(np.column_stack((frames, YA_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
-            c_plot.set_data(np.column_stack((frames, C_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
-            s_plot.set_data(np.column_stack((frames, S_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+            try:
+                ya_plot.set_data(np.column_stack((frames, YA_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+                c_plot.set_data( np.column_stack((frames, C_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+                s_plot.set_data( np.column_stack((frames, S_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
 
-            if g_dict is not None:
-                s_pul_plot.set_data(np.column_stack((pul_crd, s_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
-                c_pul_plot.set_data(np.column_stack((pul_crd, c_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+                if g_dict is not None:
+                    s_pul_plot.set_data(np.column_stack((pul_crd, s_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+                    c_pul_plot.set_data(np.column_stack((pul_crd, c_pul_dict[tuple(cur_params.values())].sel(unit_id=cur_cell[0]))))
+            except KeyError: # removes temporal activities if current cell is dropped at current params
+                if activities_dict['S'] is not None:
+                    s_plot.set_data(np.column_stack((0,0)))
+                c_plot.set_data(np.column_stack((0,0)))
+                ya_plot.set_data(np.column_stack((0,0)))
+
+                if g_dict is not None:
+                    s_pul_plot.set_data(np.column_stack((0,0)))
+                    c_pul_plot.set_data(np.column_stack((0,0)))
+                
             self.win.setWindowTitle(f'{cur_params};  cell: {cur_cell[0]}')
 
         def update_p(index):
