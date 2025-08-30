@@ -33,6 +33,10 @@ from scipy.sparse import csc_matrix
 from scipy.sparse.linalg import lsqr
 from tifffile import TiffFile, imread
 
+warnings.filterwarnings(
+    "ignore", 
+    message="ignoring keyword argument 'read_only'")
+
 
 def load_videos(
     vpath: str,
@@ -802,15 +806,10 @@ See Also
 """
 
 FAST_FUNCTIONS = [
-    darr.core.getter_inline,
-    darr.core.getter,
     _operator.getitem,
-    zr.core.Array,
+    zr.Array,
     darr.chunk.astype,
     darr.core.concatenate_axes,
-    darr.core._vindex_slice,
-    darr.core._vindex_merge,
-    darr.core._vindex_transpose,
 ]
 """
 List of fast functions that should be inlined during optimization.

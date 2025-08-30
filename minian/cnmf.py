@@ -468,7 +468,7 @@ def update_spatial_perpx(
     y: np.ndarray,
     alpha: float,
     sub: sparse.COO,
-    C_store: Union[np.ndarray, zarr.core.Array],
+    C_store: Union[np.ndarray, zarr.Array],
     f: Optional[np.ndarray],
 ) -> sparse.COO:
     """
@@ -488,7 +488,7 @@ def update_spatial_perpx(
         Parameter of the optimization problem controlling sparsity.
     sub : sparse.COO
         Subsetting matrix.
-    C_store : Union[np.ndarray, zarr.core.Array]
+    C_store : Union[np.ndarray, zarr.Array]
         Estimation of temporal dynamics of cells.
     f : np.ndarray, optional
         Temporal dynamic of background.
