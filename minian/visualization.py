@@ -164,7 +164,7 @@ class Vis:
             for unit_id_tile in unit_id_indices:
                 image = scene.Image(data.sel(
                     frame=frame_tile,
-                    unit_id=unit_id_tile),
+                    unit_id=unit_id_tile).astype(np.float32),
                     clim=clim,
                     parent=view.scene
                     )
@@ -1083,7 +1083,7 @@ class Vis:
                 if multiscale:
                     self.draw_multiscale_image(data=data, view=view_ls[i])
                 else:
-                    scene.Image(data, parent=view_ls[i].scene)
+                    scene.Image(data.astype(np.float32), parent=view_ls[i].scene)
 
         for i in np.arange(1,len(components_dict)):
             view_ls[0].camera.link(view_ls[i].camera)
@@ -1104,7 +1104,7 @@ class Vis:
             A,
             method='maxidx',
             threshold=0,
-            cm=colormap.get_colormap('Spectral_r'),
+            cmap='Spectral_r',
             alpha=0.7,
             scale_image=True
     ):
@@ -1128,6 +1128,7 @@ class Vis:
             raise Exception('Invalid method chosen.')
 
         # convert maxA colors to remove space where there are no cells
+        cm = colormap.get_colormap(cmap)
         maxA[maxA <= threshold] = np.nan
         maxA = normalize(maxA)
         maxA = np.array([cm[maxA[i,:]] for i in np.arange(maxA.shape[0])])
@@ -1139,7 +1140,7 @@ class Vis:
         a_view        = self.add_axes_view('A', x_label='width', y_label='height')
 
         max_proj_im = scene.Image(max_proj.astype(np.float32), cmap='gray', parent=max_proj_view.scene)
-        a_im        = scene.Image(maxA.astype(np.float32), cmap='Spectral_r', parent=a_view.scene)
+        a_im        = scene.Image(maxA.astype(np.float32), cmap=cmap, parent=a_view.scene)
 
         if not scale_image:
             max_proj_view.camera.aspect = 1
