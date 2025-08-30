@@ -15,7 +15,7 @@ from vispy.scene import visuals
 from vispy.visuals.filters import IsolineFilter
 from vispy.visuals.transforms import STTransform
 from vispy.scene.cameras import Magnify1DCamera
-from vispy.color import colormap
+from vispy.color import colormap, Color
 from vispy import gloo
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QSlider
 from PyQt5.QtCore import Qt
@@ -1155,6 +1155,300 @@ class Vis:
         self.canvas.events.mouse_double_click.connect(on_mouse_double_click)
         on_mouse_double_click(0)
 
+
+################################################################
+## The following 4 classes are for drawing shapes on a canvas ##
+## Taken from https://vispy.org/gallery/scene/shape_draw.html ##
+################################################################
+class ControlPoints(scene.visuals.Compound):
+    def __init__(self, parent):
+        scene.visuals.Compound.__init__(self, [])
+        self.unfreeze()
+        self.parent = parent
+        self._center = [0, 0]
+        self._width = 0.0
+        self._height = 0.0
+        self.selected_cp = None
+        self.opposed_cp = None
+
+        self.control_points = [scene.visuals.Markers(parent=self)
+                               for i in range(0, 4)]
+        for c in self.control_points:
+            c.set_data(pos=np.array([[0, 0]],
+                                    dtype=np.float32),
+                       symbol="s",
+                       edge_color="red",
+                       size=6)
+            c.interactive = True
+        self.freeze()
+
+    def update_bounds(self):
+        self._center = [0.5 * (self.parent.bounds(0)[1] +
+                               self.parent.bounds(0)[0]),
+                        0.5 * (self.parent.bounds(1)[1] +
+                               self.parent.bounds(1)[0])]
+        self._width = self.parent.bounds(0)[1] - self.parent.bounds(0)[0]
+        self._height = self.parent.bounds(1)[1] - self.parent.bounds(1)[0]
+        self.update_points()
+
+    def update_points(self):
+        self.control_points[0].set_data(
+            pos=np.array([[self._center[0] - 0.5 * self._width,
+                           self._center[1] + 0.5 * self._height]]))
+        self.control_points[1].set_data(
+            pos=np.array([[self._center[0] + 0.5 * self._width,
+                           self._center[1] + 0.5 * self._height]]))
+        self.control_points[2].set_data(
+            pos=np.array([[self._center[0] + 0.5 * self._width,
+                           self._center[1] - 0.5 * self._height]]))
+        self.control_points[3].set_data(
+            pos=np.array([[self._center[0] - 0.5 * self._width,
+                           self._center[1] - 0.5 * self._height]]))
+
+    def select(self, val, obj=None):
+        self.visible(val)
+        self.selected_cp = None
+        self.opposed_cp = None
+
+        if obj is not None:
+            n_cp = len(self.control_points)
+            for i in range(0, n_cp):
+                c = self.control_points[i]
+                if c == obj:
+                    self.selected_cp = c
+                    self.opposed_cp = \
+                        self.control_points[int((i + n_cp / 2)) % n_cp]
+
+    def start_move(self, start):
+        None
+
+    def move(self, end):
+        if not self.parent.editable:
+            return
+        if self.selected_cp is not None:
+            self._width = 2 * (end[0] - self._center[0])
+            self._height = 2 * (end[1] - self._center[1])
+            self.update_points()
+            self.parent.update_from_controlpoints()
+
+    def visible(self, v):
+        for c in self.control_points:
+            c.visible = v
+
+    def get_center(self):
+        return self._center
+
+    def set_center(self, val):
+        self._center = val
+        self.update_points()
+
+
+class EditVisual(scene.visuals.Compound):
+    def __init__(self, editable=True, selectable=True, on_select_callback=None,
+                 callback_argument=None, *args, **kwargs):
+        scene.visuals.Compound.__init__(self, [], *args, **kwargs)
+        self.unfreeze()
+        self.editable = editable
+        self._selectable = selectable
+        self._on_select_callback = on_select_callback
+        self._callback_argument = callback_argument
+        self.control_points = ControlPoints(parent=self)
+        self.drag_reference = [0, 0]
+        self.freeze()
+
+    def add_subvisual(self, visual):
+        scene.visuals.Compound.add_subvisual(self, visual)
+        visual.interactive = True
+        self.control_points.update_bounds()
+        self.control_points.visible(False)
+
+    def select(self, val, obj=None):
+        if self.selectable:
+            self.control_points.visible(val)
+            if self._on_select_callback is not None:
+                self._on_select_callback(self._callback_argument)
+
+    def start_move(self, start):
+        self.drag_reference = start[0:2] - self.control_points.get_center()
+
+    def move(self, end):
+        if self.editable:
+            shift = end[0:2] - self.drag_reference
+            self.set_center(shift)
+
+    def update_from_controlpoints(self):
+        None
+
+    @property
+    def selectable(self):
+        return self._selectable
+
+    @selectable.setter
+    def selectable(self, val):
+        self._selectable = val
+
+    @property
+    def center(self):
+        return self.control_points.get_center()
+
+    @center.setter
+    # this method redirects to set_center. Override set_center in subclasses.
+    def center(self, val):
+        self.set_center(val)
+
+    # override this method in subclass
+    def set_center(self, val):
+        self.control_points.set_center(val[0:2])
+
+    def select_creation_controlpoint(self):
+        self.control_points.select(True, self.control_points.control_points[2])
+
+
+class EditRectVisual(EditVisual):
+    def __init__(self, center=[0, 0], width=20, height=20, *args, **kwargs):
+        EditVisual.__init__(self, *args, **kwargs)
+        self.unfreeze()
+        self.rect = scene.visuals.Rectangle(center=center, width=width,
+                                            height=height,
+                                            color=Color('white', alpha=0.1),
+                                            border_color="orange",
+                                            border_width=4,
+                                            radius=0, parent=self)
+        self.rect.interactive = True
+
+        self.freeze()
+        self.add_subvisual(self.rect)
+        self.control_points.update_bounds()
+        self.control_points.visible(False)
+
+    def set_center(self, val):
+        self.control_points.set_center(val[0:2])
+        self.rect.center = val[0:2]
+
+    def update_from_controlpoints(self):
+        try:
+            self.rect.width = abs(self.control_points._width)
+        except ValueError:
+            None
+        try:
+            self.rect.height = abs(self.control_points._height)
+        except ValueError:
+            None
+
+
+class Subset_MC_Canvas(scene.SceneCanvas):
+    """ A simple test canvas for drawing demo """
+
+    def __init__(
+            self, 
+            frame,
+            width=800,
+            height=800,
+            bgcolor='white'
+            ):
+        scene.SceneCanvas.__init__(self, keys='interactive',
+                                   size=(width,height),
+                                   bgcolor=bgcolor)
+
+        self.unfreeze()
+
+        grid = self.central_widget.add_grid(padding=20)
+        self.view = grid.add_view(row=0, col=1)
+        self.view.camera = scene.PanZoomCamera()
+
+        # Add X and Y axes
+        axis_kwargs = dict(
+            text_color='black',
+            tick_color='black',
+            axis_color='black',
+            tick_width=1,
+            axis_width=2,
+            major_tick_length=5,
+            minor_tick_length=3
+        )
+        self.view.border_color = 'black'
+
+        xaxis = scene.AxisWidget(orientation='bottom',
+                                 axis_label='width',
+                                 **axis_kwargs)
+        xaxis.height_max = 40
+        grid.add_widget(xaxis, row=1, col=1)
+        
+        yaxis = scene.AxisWidget(orientation='left',
+                                 axis_label='height',
+                                 **axis_kwargs)
+        yaxis.width_max = 40
+        grid.add_widget(yaxis, row=0, col=0)
+
+        # view.border_color = 'black'
+        xaxis.link_view(self.view)
+        yaxis.link_view(self.view)
+
+        frame_im = scene.Image(frame, parent=self.view.scene)
+        # the left mouse button pan has to be disabled in the camera, as it
+        # interferes with dragging line points
+        # Proposed change in camera: make mouse buttons configurable
+        self.view.camera._viewbox.events.mouse_move.disconnect(
+            self.view.camera.viewbox_mouse_event)
+
+        self.object = EditRectVisual(parent=self.view.scene)
+        self.object.parent = None
+        self.show()
+        self.selected_point = None
+        self.selected_object = None
+        self.mouse_start_pos = [0, 0]
+        self.freeze()
+
+        self.view.camera.rect = (0, 0, frame.sizes['width'], frame.sizes['height'])
+
+    def on_mouse_press(self, event):
+        tr = self.scene.node_transform(self.view.scene)
+        pos = tr.map(event.pos)
+        self.view.interactive = False
+        selected = self.visual_at(event.pos)
+        self.view.interactive = True
+        if self.selected_object is not None:
+            self.selected_object.select(False)
+            self.selected_object = None
+
+        if event.button == 1:
+            if selected is not None:
+                self.selected_object = selected.parent
+                # update transform to selected object
+                tr = self.scene.node_transform(self.selected_object)
+                pos = tr.map(event.pos)
+                self.selected_object.select(True, obj=selected)
+                self.selected_object.start_move(pos)
+                self.mouse_start_pos = event.pos
+
+            # create new object:
+            if self.selected_object is None:
+                new_object = EditRectVisual(parent=self.view.scene)
+                self.object.parent = None
+                self.object = new_object
+                new_object.select_creation_controlpoint()
+                new_object.set_center(pos[0:2])
+                self.selected_object = new_object.control_points
+
+        if event.button == 2:  # right button deletes object
+            self.object.parent = None
+            self.selected_object = None
+
+    def on_mouse_move(self, event):
+        if event.button == 1:
+            if self.selected_object is not None:
+                self.view.camera._viewbox.events.mouse_move.disconnect(
+                    self.view.camera.viewbox_mouse_event)
+                # update transform to selected object
+                tr = self.scene.node_transform(self.selected_object)
+                pos = tr.map(event.pos)
+
+                self.selected_object.move(pos[0:2])
+            else:
+                self.view.camera._viewbox.events.mouse_move.connect(
+                    self.view.camera.viewbox_mouse_event)
+        else:
+            None
 
 
 def normalize(a: np.ndarray) -> np.ndarray:
