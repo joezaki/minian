@@ -10,7 +10,7 @@ import ffmpeg
 from typing import Callable, List, Optional, Tuple, Union
 from uuid import uuid4
 
-from vispy import scene, use
+from vispy import scene, io, use
 from vispy.scene import visuals
 from vispy.visuals.filters import IsolineFilter
 from vispy.visuals.transforms import STTransform
@@ -78,6 +78,14 @@ class Vis:
         
         self.win.show()
         self.qt_app.exec_()
+
+
+
+    def save(self, save_path):
+        '''
+        Save the current canvas as a static image.
+        '''
+        io.imsave(save_path, self.canvas.render())
     
 
 
