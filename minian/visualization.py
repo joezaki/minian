@@ -1,4 +1,5 @@
 import os
+import sys
 import functools as fct
 import itertools as itt
 import numpy as np
@@ -41,7 +42,7 @@ class Vis:
             grid_spacing=20
     ):
         self.title = title
-        self.qt_app = QApplication.instance()
+        self.qt_app = QApplication.instance() or QApplication([sys.argv])
         self.win = QWidget()
         self.win.setWindowTitle(title)
         self.layout = QVBoxLayout()
