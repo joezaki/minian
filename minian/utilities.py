@@ -333,7 +333,7 @@ def open_minian(
         dslist = []
         for d in listdir(dpath):
             arr_path = pjoin(dpath, d)
-            if isdir(arr_path):
+            if isdir(arr_path) and d.endswith(".zarr"):
                 arr = list(xr.open_zarr(arr_path).values())[0]
                 arr.data = darr.from_zarr(
                     os.path.join(arr_path, arr.name), inline_array=True
